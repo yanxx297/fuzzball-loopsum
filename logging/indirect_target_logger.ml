@@ -1,7 +1,7 @@
 (* logs table of indirect jump targts *)
 
 let assoc = Hashtbl.create 100
-let output_loc = ref "./indirect_addrs.txt"
+let output_loc = ref "/tmp/indirect_addrs.txt"
 
 
 let add current_addr target_addr =

@@ -514,7 +514,7 @@ let cmdline_opts =
     ("-trace-loop", Arg.Set(opt_trace_loop),
      " Print entering loops");
     ("-print-dt", Arg.Set(opt_print_dt),
-     " Print the final decision tree to file [bdt_graph] in xdot format");
+     " Print the final decision tree to file /tmp/bdt_graph in xdot format");
     ("-trace-ivt", Arg.Set(opt_trace_ivt),
      " Trace the building of induction variable table (IVT)");
     ("-trace-gt", Arg.Set(opt_trace_gt),

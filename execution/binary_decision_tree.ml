@@ -346,7 +346,7 @@ class binary_decision_tree = object(self)
     self#viz_bt
 
   method private viz_bt = 
-    let fd = open_out "bdt_graph" in
+    let fd = open_out "/tmp/bdt_graph" in
     let rec viz_node n =  
       let n_id = n.ident in
         Printf.fprintf fd "%d;\n" n_id;
