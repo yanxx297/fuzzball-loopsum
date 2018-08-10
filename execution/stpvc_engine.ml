@@ -82,6 +82,7 @@ class stpvc_engine = object(self)
 		     (Vine_stpvc.vine_to_stp vc self#ctx conj) 0)))
     in
     (* Printf.eprintf "STP formula is %s\n" (Stpvc.to_string s);
+       flush stderr;
        flush stdout; *)
     let result = Stpvc.query vc s in
     let ce_list = if result then [] else

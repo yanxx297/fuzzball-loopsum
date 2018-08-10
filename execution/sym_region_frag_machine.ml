@@ -184,6 +184,63 @@ struct
 			          not clear what's best *)
       | (_, _, _) -> 23
 
+  (* Similar to narrow_bitwidth, but count negative numbers of small
+     absolute value (i.e. with many leading 1s) as narrow as well. I
+     can't decide whether this would work better as a single function
+     with a flag: some of the cases are similar, but others aren't. *)
+  let narrow_bitwidth_signed form_man e =
+    let combine wd res = min wd res in
+    let f loop = function
+      | V.Constant(V.Int(ty, v)) ->
+	  min (1 + floor_log2 v)
+	    (1 + floor_log2 (Int64.neg (fix_s ty v)))
+      | V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
+      | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+      | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_32, e1)
+	-> min 32 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_16, e1)
+	-> min 16 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_8, e1)
+	-> min 8  (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_1, e1)
+	-> min 1  (loop e1)
+      | V.Cast(_, V.REG_32, _) -> 32
+      | V.Cast(_, V.REG_16, _) -> 16
+      | V.Cast(_, V.REG_8, _) -> 8
+      | V.Cast(_, V.REG_1, _) -> 1
+      | V.Cast(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
+      | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
+      | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+      | V.Lval(V.Mem(_, _, _))
+      | V.Lval(V.Temp(_)) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
+      | V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	  (loop e1) + (Int64.to_int v)
+      | V.BinOp(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Ite(_, te, fe) -> max (loop te) (loop fe)
+      | V.UnOp(_)
+      | V.Let(_, _, _)
+      | V.Name(_)
+      | V.FBinOp(_, _, _, _)
+      | V.FUnOp(_, _, _)
+      | V.FCast(_, _, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Constant(V.Str(_)) ->
+	  failwith "Unhandled string in narrow_bitwidth_signed"
+      | V.Unknown(_) ->
+	  failwith "Unhandled unknown in narrow_bitwidth_signed"
+    in
+      FormMan.map_expr_temp form_man e f combine
+			
   let ctz i =
     let rec loop = function
       | 0L -> 64
@@ -326,6 +383,8 @@ struct
       | e when (narrow_bitwidth form_man e)
 	  < (narrow_bitwidth_cutoff ())
 	  -> ExprOffset(e)
+      | e when (narrow_bitwidth_signed form_man e) < 23
+	  -> ExprOffset(e)		
       | V.Cast(V.CAST_SIGNED, _, x)
 	  when (narrow_bitwidth form_man x) < (narrow_bitwidth_cutoff ())
 	    -> ExprOffset(e)
@@ -415,7 +474,7 @@ struct
 (* 	  -> ExprOffset(e) *)
       | V.Cast(V.CAST_SIGNED, _, _) -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
-      | e -> if_weird e
+      | e -> (if_weird e)
 	  
   (* When we're not going to try for symbolic regions, just separate
      the concrete terms from everything else; they should be the base *)
@@ -639,14 +698,17 @@ struct
 	| _ -> self#choose_conc_offset_cached ty e ident
 
     method private concretize ty e ident =
-      if !opt_concrete_path then
-	form_man#eval_expr e
+      let res = (
+        if !opt_concrete_path then
+          form_man#eval_expr e
       else
 	(dt#start_new_query;
 	 self#note_first_branch;
 	 let v = self#concretize_inner ty e ident in
 	   dt#count_query;
-	   v)
+	   v)) in
+		Printf.printf "0x%08Lx\n" res;
+		res
 
     val mutable sink_read_count = 0L
 
@@ -773,6 +835,7 @@ struct
 		choices
 
     method private handle_weird_addr_expr e =
+      Printf.printf "[Analysis][weird_addr] %s\n" (V.exp_to_string e);
       if !opt_stop_on_weird_sym_addr || !opt_finish_on_weird_sym_addr then
 	(self#add_event_detail "tag" (`String ":weird-sym-addr");
 	 self#add_event_detail "addr-expr"
@@ -782,8 +845,10 @@ struct
 	 if !opt_finish_on_weird_sym_addr then
 	   (self#finish_fuzz "weird symbolic-controlled address";
 	    ExprOffset(e))
-	 else
-	   raise WeirdSymbolicAddress)
+	 else (
+	  Printf.printf "Weird addr: %s\n" (V.exp_to_string e); 
+		raise WeirdSymbolicAddress)
+		)
       else if !opt_fail_offset_heuristic then
 	failwith ("Strange term "^(V.exp_to_string e)^" in address")
       else
@@ -1051,6 +1116,122 @@ struct
 		    if !opt_trace_stopping then
 		      Printf.eprintf "Unsupported jump into sink region\n";
 		    raise SymbolicJump
+		
+    method simplify_exp typ e =
+      match e with
+        | V.BinOp(op, V.BinOp(op1, x, V.Constant(_)), V.BinOp(op2, y, V.Constant(_)))
+            when x = y && 
+                 (match op with 
+                    | (V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE) -> true
+                    | _  ->  false) &&
+                 (let simple s = match s with 
+                    | (V.PLUS | V.MINUS) -> true
+                    | _  -> false in
+                    (simple op1) && (simple op2)) -> 
+            (let res = spfm#query_unique_value e typ in
+               match res with
+                 | Some v -> (V.Constant(V.Int(typ, v)))
+                 | None  -> (e))
+        | _  -> 
+            (let e' = D.from_symbolic e in
+             let res = (match typ with
+                          | V.REG_1 -> form_man#simplify1 e'
+                          | V.REG_8 -> form_man#simplify8 e'
+                          | V.REG_16 -> form_man#simplify16 e'
+                          | V.REG_32 -> form_man#simplify32 e'
+                          | V.REG_64 -> form_man#simplify64 e'
+                          | _ -> failwith "simplify_exp: illegal typ") in
+               D.to_symbolic_1 res)
+
+    method eval_cjmp exp targ1 targ2 =
+      (*Printf.printf "original cjmp cond: \n";
+       Printf.printf "%s\n" (V.exp_to_string exp);*)
+      let (v, e) = self#eval_cjmp_cond exp in
+      let rec loop e targ = (
+        Printf.printf "eval_cjmp > loop: %s\n" (V.exp_to_string e);
+        match e with
+          | V.BinOp(V.EQ, lhs, (V.Constant(_) as rhs)) -> 
+              (if targ = targ2 then (Some lhs, Some rhs, V.EQ) else 
+                 (Some lhs, Some rhs, V.NEQ))
+          | V.BinOp(V.BITOR, (V.BinOp(V.EQ, _, _) (*as zf*)), V.BinOp(V.XOR, V.Cast(V.CAST_HIGH, V.REG_1, _), sf)) -> 
+              (*jle: (a == b)|(cast() ^ (SF))*)
+              loop sf targ
+          | V.BinOp(V.BITAND, (V.Cast(V.CAST_HIGH, V.REG_1, lhs)), V.BinOp(
+              V.XOR, (V.Cast(V.CAST_HIGH, V.REG_1, lhs')), V.Cast(V.CAST_HIGH, V.REG_1, d))) -> 
+              (*SF: cast(lhs)&(cast(lhs)^cast(D)) *)
+              (match (lhs = lhs') with
+                 | true -> (
+                     let typ_l = Vine_typecheck.infer_type_fast lhs in
+                     let typ_d = Vine_typecheck.infer_type_fast d in
+                     let (lhs', d') = (
+                       if typ_l = typ_d then (lhs, d)
+                       else if typ_l > typ_d then (lhs, V.Cast(V.CAST_SIGNED, typ_l, d))
+                       else (V.Cast(V.CAST_SIGNED, typ_d, lhs), d)) in  
+                     let rhs = (V.BinOp(V.MINUS, lhs', d')) in
+                       if targ = targ2 then (Some lhs', Some rhs, V.SLE) else
+                         Some rhs, Some lhs', V.SLT)
+                 | false -> (None, None, V.NEQ))			
+          (*| V.BinOp(V.BITOR, V.Cast(V.CAST_HIGH, V.REG_1, exp), (V.BinOp(V.EQ, _, _) as zf))  -> 
+           (*jle: cast() | (a == b)*)
+           (ignore(loop exp targ);
+           if targ = targ2 then (Some (eval_dis zf), V.SLE) else 
+           (Some (get_neg(eval_dis zf)), V.SLT))	*)	
+          | V.BinOp(V.XOR, V.BinOp(V.LT, lhs, rhs), V.BinOp(V.BITAND, V.Cast(V.CAST_HIGH, V.REG_1, _), V.BinOp(V.LT, _, _))) -> 
+              (*jl: (lhs<rhs)^(cast()&(a<b))*)
+              (if targ = targ2 then (Some lhs, Some rhs, V.SLT) else 
+                 (Some rhs, Some lhs, V.SLE))				
+          | V.BinOp(V.LT, lhs, rhs) ->
+              (*jb/jae*) 
+              (if targ = targ2 then (Some lhs, Some rhs, V.LT) else 
+                 (Some rhs, Some lhs, V.LE))
+          | V.BinOp(V.BITOR, V.BinOp(V.LT, lhs, rhs), V.BinOp(V.EQ, _, _)) -> 
+              (*jbe/ja*)
+              (if targ = targ2 then (Some lhs, Some rhs, V.LE) else 
+                 (Some rhs, Some lhs, V.LT)) 
+          | V.Lval(V.Temp(var)) -> ((*Printf.printf "Lval(Temp)\n";*)FormMan.if_expr_temp form_man var (fun e' -> loop e' targ) (None, None, V.NEQ) (fun v -> ()))
+          | _ -> (None, None, V.NEQ))
+      in
+      let b = self#eval_cjmp_targ targ1 targ2 v e in (
+        match spfm#loop_heur targ1 targ2 with
+          | (true, targ) -> (
+              (*targ' : real targ choosen by cjmp_choose*)
+              (*targ : the in-loop targ*)
+              Printf.printf "eval_cjmp: flags = <%s>\n" (V.exp_to_string exp);
+              if not (targ = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) || e = V.Constant(V.Int(V.REG_1, 0L))) 
+              then (
+                let (lhs_opt, rhs_opt, op) = (loop e targ) in
+                  (match (lhs_opt, rhs_opt) with
+                     | (Some lhs, Some rhs) -> (
+                         let typ_l = Vine_typecheck.infer_type_fast lhs
+                         and typ_r = Vine_typecheck.infer_type_fast rhs in
+                         let lhs' = (self#simplify_exp typ_l lhs) 
+                         and rhs' = (self#simplify_exp typ_r rhs) in
+                           if not (typ_l = typ_r) then ( 
+                             Printf.printf "left is %s, while right is %s\n" (V.type_to_string typ_l) (V.type_to_string typ_r);
+                             Printf.printf "%s %s %s\n" (V.exp_to_string lhs) (V.binop_to_string op) (V.exp_to_string rhs);
+                             failwith "Illegal comparison cond");
+                           let targ' = (
+                             match b with
+                               | true -> targ1
+                               | false -> targ2) in				
+                             if targ = targ' then (
+                               let eeip = (
+                                 Printf.printf "targ = 0x%08Lx\n" targ;
+                                 Printf.printf "targ' = 0x%08Lx\n" targ';
+                                 Printf.printf "targ1 = 0x%08Lx\n" targ1;
+                                 Printf.printf "targ2 = 0x%08Lx\n" targ2;
+                                 if targ = targ1 then targ2 else targ1) in
+                               let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in
+                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check_cond eeip)) 
+                     | _ -> ()
+                  )) 
+            )
+          | _ -> ());
+                                                     (match b with
+                                                        | true -> self#add_bd (self#get_eip) e targ1
+                                                        | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2);
+                                                     b
+		 		
 
     method private register_num reg =
       match reg with
@@ -1170,6 +1351,53 @@ struct
 		when !opt_concretize_divisors
 	      -> (v1, (conc ty2 v2))
 	  | _ -> (v1, v2)
+
+    method run () = 
+      (*let store_exp addr e ty = (
+       Printf.printf "store_exp: mem[0x%08Lx] <- %s\n" addr (V.exp_to_string e);
+       let e' = D.from_symbolic e in
+       match ty with
+       | V.REG_8 -> self#store_byte addr e'
+       | V.REG_16 -> self#store_short addr e'
+       | V.REG_32 -> self#store_word addr e'
+       | V.REG_64 -> self#store_long addr e'
+       | _ -> ()) in*)
+      let eip = 
+        (try self#get_eip with 
+           | NotConcrete(_) -> 0L) in
+      let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func eip = (
+        dt#start_new_query;
+        let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func eip in
+          dt#count_query;
+          res) in
+      let check_func cond = (
+        dt#start_new_query;
+        let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
+        let (res, _) = spfm#query_with_pc_choice cond true ident (fun() -> true) in
+          dt#count_query;
+          Some res) in	
+      let (vt, eeip) = self#check_loopsum eip check_func self#simplify_exp try_ext in
+        (match vt with
+           | [] -> 
+               spfm#run()
+           | _ -> (
+               let rec loop l = (
+                 match l with
+                   | h::l' -> ( 
+                       let (addr, exp) = h in
+                       let ty = Vine_typecheck.infer_type_fast exp in 
+                       let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                         self#store_exp addr exp' ty;
+                         loop l'
+                     )
+                   | [] -> ()
+               ) in
+                 loop vt;
+                 let lab = Printf.sprintf "pc_0x%Lx" eeip in
+                   self#set_eip eeip;
+                   lab
+             )
+        )			
 
     val mutable extra_store_hooks = []
     val mutable last_set_null = Hashtbl.create 100
@@ -1856,8 +2084,13 @@ struct
 
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
+	let h = self#get_loop_header in
+	(*Printf.printf "jump_hook: 0x%08Lx | 0x%08Lx\n" h eip;*) 
+	if (eip = h) then
+          let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in
+            ignore(spfm#renew_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check_cond);
       if !opt_check_for_ret_addr_overwrite then
-	self#update_ret_addrs last_insn last_eip eip
+	self#update_ret_addrs last_insn last_eip eip;
 
     method private check_for_ret_addr_store addr_e ty =
       if !opt_check_for_ret_addr_overwrite then
@@ -1936,7 +2169,7 @@ struct
 			   if !opt_finish_on_ret_addr_overwrite then
 			     self#finish_fuzz "return address overwrite"
 		       | Some false ->
-			   Printf.eprintf
+			   Printf.printf
 			     "Store to %s cannot overwite 0x%Lx.\n" 
 			     (V.exp_to_string e) loc
 		)
@@ -1954,6 +2187,16 @@ struct
 	  self#eval_addr_exp_region addr_e 0x9000 (self#decide_maxval "Store") in
 	let r = ref None in
 	let addr = ref 0L in
+        let v = match ty with
+          | V.REG_1 -> D.to_symbolic_1 value
+          | V.REG_8 -> D.to_symbolic_8 value
+          | V.REG_16 -> D.to_symbolic_16 value
+          | V.REG_32 -> D.to_symbolic_32 value
+          | V.REG_64 -> D.to_symbolic_64 value
+          | _ -> failwith "Unexpected type in srfm#handle_store"
+        in
+	let v' = (self#simplify_exp ty v) in
+	spfm#add_iv !addr v';
 	let table_store_status =
 	  match location with
 	  | TableLocation(r, off_exp, cloc) ->

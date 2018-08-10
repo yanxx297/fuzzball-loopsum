@@ -394,7 +394,7 @@ struct
 	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
 	  | V.Constant(_) -> e
 	  | V.Lval(V.Temp(_)) -> e
-	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_expr e
+	  | V.Lval(V.Mem(_, _, _)) -> (Printf.eprintf "rewrite_for_solve: %s\n" (V.exp_to_string e); self#rewrite_mem_expr e)
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
 	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
@@ -890,6 +890,9 @@ struct
 			  V.Lval(V.Temp(self#make_temp_var e2 ty)))
 	) v
 
+    method make_post_cond v ty =
+      V.Lval(V.Temp(self#make_temp_var v ty))
+
     method make_ite cond_v ty v_true v_false =
       let cond_v'  = self#tempify  cond_v  V.REG_1 and
 	  v_true'  = self#simplify v_true  ty      and
@@ -943,6 +946,7 @@ struct
 	  if !opt_trace_tables then
 	    (Printf.eprintf "Select from table %d at %s is %s\n"
 	       table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
+	     flush stderr;
 	     flush stdout);
 	  if table_num <> -1 then
 	    Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
@@ -961,6 +965,7 @@ struct
 	    if !opt_trace_tables then
 	      (Printf.eprintf "Select from table %d at %s is %s\n"
 		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
+	       flush stderr;
 	       flush stdout);
 	    v
 	with
@@ -1116,6 +1121,7 @@ struct
 	if !opt_trace_tables then
 	  (Printf.eprintf "Select from GF(2) table at %s is %s\n"
 	     (V.exp_to_string idx_exp) (D.to_string_64 v');
+	   flush stderr;
 	   flush stdout);
 	v'
 

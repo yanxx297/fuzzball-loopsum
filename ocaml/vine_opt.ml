@@ -147,7 +147,7 @@ let rec constant_fold ctx e =
 			    (tos64  v1)
 			    (toshift (bits_of_width t) t2 v2) )
    (* Int64.div rounds towards zero. What do we want? *)
-	    | DIVIDE -> to_val t (int64_udiv (tos64  v1) (tos64 v2))
+	    | DIVIDE -> (to_val t (int64_udiv (tos64  v1) (tos64 v2)))
 	    | SDIVIDE -> to_val t (Int64.div (tos64 v1) (tos64  v2))
 	    | MOD -> to_val t (int64_urem (tos64 v1) (tos64 v2))
 	    | SMOD -> to_val t (Int64.rem (tos64 v1) (tos64 v2))
@@ -168,6 +168,12 @@ let rec constant_fold ctx e =
 	    NEG -> to_val t (Int64.neg (to64  v))
 	  | NOT -> to_val t (Int64.lognot (to64  v))
 	)
+    | UnOp(NEG, BinOp(op, lhs, rhs)) ->
+	(*negation distribution*) 
+	(match op with
+	| (PLUS | MINUS) -> (BinOp(op, UnOp(NEG, lhs), UnOp(NEG, rhs)))
+	| (TIMES | DIVIDE) -> (BinOp(op, UnOp(NEG, lhs), rhs))
+	| _  -> e)
     | UnOp(_, Constant(_)) ->
 	failwith "Constant folding failed for UnOp"
     | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE) as bop, rm,

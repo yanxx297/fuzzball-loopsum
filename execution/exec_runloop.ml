@@ -76,6 +76,7 @@ let decode_insns_cached fm gamma eip =
       Printf.eprintf "Printing decls:\n";
       List.iter (fun s -> V.decl_to_channel stdout s; Printf.eprintf "\n") decls;
       Printf.eprintf "End decls\n";
+      flush stderr;
       flush stdout
     end;
   return
@@ -90,7 +91,7 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
        | None -> ());
     (* Currently disabled: advance the reset point if we've got symbolic
        data but we haven't yet branched on it. *)
-    if false && fm#before_first_branch && fm#started_symbolic then (
+    if fm#before_first_branch && fm#started_symbolic then (
 	fm#make_snap ();
 	fm#set_start_eip eip);
     (let old_count =

@@ -188,6 +188,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
       if !opt_trace_solver then
 	Printf.eprintf "Solver command: %s\n" cmd;
       flush stdout;
+      flush stderr;
       let rcode = Sys.command cmd in
       let results = open_in (curr_fname ^ ".smt2.out") in
 	match (rcode, e_s_t) with

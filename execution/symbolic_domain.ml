@@ -40,7 +40,7 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
   let to_concrete_32 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_32, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_32"
-    | _ -> raise (NotConcrete e)
+    | _ -> (Printf.eprintf "%s\n" (V.exp_to_string e);raise (NotConcrete e))
 
   let to_concrete_64 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_64, v)) -> v

@@ -15,6 +15,7 @@ open Stpvc_engine;;
 open Stp_external_engine;;
 open Concrete_memory;;
 open Granular_memory;;
+open Loop_sum;;
 open Exec_assert_minder;;
 
 let bool64 f a b =
@@ -344,6 +345,7 @@ class virtual fragment_machine = object
   method virtual printable_word_reg : register_name -> string
   method virtual printable_long_reg : register_name -> string
 
+	method virtual store_exp : int64 -> V.exp -> V.typ -> unit
   method virtual store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_word_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
@@ -537,6 +539,28 @@ class virtual fragment_machine = object
   method virtual before_first_branch : bool
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
+  method virtual set_text_range : int64 -> int64 -> unit
+  method virtual loop_heur : int64 -> int64 -> bool * int64
+	method virtual branch_heur : int64 -> int64 -> int64 option
+	method virtual in_loop : int64 -> bool
+  method virtual get_loop_header : int64
+  method virtual add_iv : int64 -> Vine.exp -> unit
+  method virtual clean_ivt : unit
+  method virtual renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> bool option
+  method virtual print_dt : unit
+  method virtual add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> int64 -> unit
+  method virtual clean_gt : unit
+  method virtual is_gt_cond : Vine.exp -> bool
+	method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
+	method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+	method virtual check_loopsum : int64 ->
+         (Vine.exp -> bool option) ->
+         (Vine.typ -> Vine.exp -> Vine.exp) ->
+         ((bool -> Vine.exp) ->
+         (bool -> Vine.exp -> bool) ->
+         (bool -> unit) ->
+         (unit -> bool) -> (bool -> bool) -> int64 -> bool) ->
+         (int64 * Vine.exp) list * int64
 
   method virtual schedule_proc : unit
   method virtual maybe_switch_proc : int64 -> int64 option
@@ -616,6 +640,109 @@ struct
     val form_man = new FormMan.formula_manager
     method get_form_man = form_man
 
+	val mutable text_start = Int64.min_int
+	val mutable text_end = Int64.max_int
+	method set_text_range s e = 
+		text_start <- s;
+		text_end <- e
+	val dcfg_map = Hashtbl.create 100	(*Dynamic CFG for each procedure, indexed by (esp, last_eip, eip, ret_addr)*)
+	val mutable current_dcfg = None	(*Point to current DCFG*)
+	
+	(**res = (is_guard?, in_loop_targ)*)
+	method loop_heur t_eip f_eip = 
+		(*Printf.printf "loop_heur: \n";*)
+		let res = match current_dcfg with
+		| None -> (false, -1L)
+		| Some dcfg -> (
+			let use_heur = dcfg#get_heur in (
+				match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
+  			| (true, false) -> (true, (if use_heur then t_eip else -1L))
+  			| (false, true) -> (true, (if use_heur then f_eip else -1L))
+  			| _ -> (false, -1L)))
+		in
+		res
+		
+	method branch_heur t_eip f_eip = (
+		let eip = self#get_eip in
+		let res = match current_dcfg with
+		| None -> (None)
+		| Some dcfg -> (
+			match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
+			| (true, true) 
+			| (true, false)
+			| (false, true) -> (
+				let d = dcfg#check_bt eip in
+				(match d with
+				| Some (_, res) -> (Some res)
+				| _ -> None))
+			| _ -> (None))
+		in
+		res)
+		
+	method in_loop eip= (
+		match current_dcfg with
+		| None -> false
+		| Some g -> g#in_loop eip)	
+		
+	method private get_iter = 
+		match current_dcfg with
+		| None -> 0
+		| Some g -> g#get_iter
+
+	method get_loop_header = 
+		match current_dcfg with
+		| None -> -1L
+		| Some g -> g#get_loop_header
+
+	method add_iv addr exp = 
+		match current_dcfg with
+		| None -> ()
+		| Some g -> g#add_iv addr exp
+
+	method clean_ivt = 
+		match current_dcfg with
+		| None -> ()
+		| Some g -> g#clean_ivt
+
+	method renew_ivt s_func check = 
+		match current_dcfg with
+		| None -> None
+		| Some g -> g#renew_ivt s_func check
+	
+	method is_iv_cond cond = 
+		match current_dcfg with
+		| None -> false
+		| Some g -> g#is_iv_cond cond
+
+	method add_g addr lhs rhs op' ty s_func check eeip= 
+		match current_dcfg with
+		| None -> ()
+		| Some g -> g#add_g addr lhs rhs op' ty s_func check eeip
+
+	method clean_gt = 
+		match current_dcfg with
+		| None -> ()
+		| Some g -> g#clean_gt
+	
+	method is_gt_cond cond = 
+		match current_dcfg with
+		| None -> false
+		| Some g -> g#is_gt_cond cond
+
+	method add_bd eip exp d = (
+		match current_dcfg with
+		| None -> ()
+		| Some g -> (g#add_bd eip exp d))
+
+	method check_loopsum eip check s_func try_ext = 
+		match current_dcfg with
+		| None -> ([], 0L)
+		| Some g -> g#check_loopsum eip check s_func try_ext
+
+	method simplify_exp typ e = e
+	
+	method print_dt = Printf.printf "fm: No DT to print\n"
+
     val mutable reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
     val temps = V.VarHash.create 100
@@ -625,6 +752,9 @@ struct
     val mutable insns = []
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+    val mutable dcfg_snap = None
+    val mutable call_stack_snap = []
+    val mutable first_branch = true
 
     val mutable before_first_branch_flag = true
     (* we want to ask for dt depth from other fragment machines in
@@ -826,6 +956,25 @@ struct
 		Hashtbl.add unique_eips eip ())));
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
+
+	(*add eip into dcfg*)
+	match current_dcfg with
+	| None -> ()
+	| Some dcfg -> if eip >= text_start && eip <= text_end then ( 
+			let apply l = (
+				match l with
+				| h::l' -> (
+					let (addr, exp) = h in 
+					if !opt_trace_postcond then Printf.printf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
+					let ty = Vine_typecheck.infer_type_fast exp in 
+					let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+					self#store_exp addr exp' ty)
+				|[] -> ()) in
+				match dcfg#add_node eip apply with
+			| ExitLoop -> (				
+				if !opt_trace_postcond then Printf.printf "*************************************** Post-cond *************************************** \n";
+				)
+			|_ -> ());
       List.iter apply_eip_hook extra_eip_hooks;
       self#watchpoint;
       self#event_to_history eip;
@@ -911,17 +1060,33 @@ struct
 	      (* TODO: add similar parsing for ARM mnemonics *)
 	      "not a jump"
       in
+	let switch_dcfg eip = 
+		let next_dcfg = Hashtbl.find dcfg_map eip in
+		if current_dcfg != next_dcfg 
+		then (
+			(*Printf.eprintf "Switch DCFG: Now in 0x%08Lx\n" eip;*)
+			current_dcfg <- next_dcfg)
+	in
 	match kind with
 	  | "call" ->
 	      let esp = self#get_esp in
-	      let depth = List.length call_stack and
+	      let (*depth = List.length call_stack and*)
 		  ret_addr = get_retaddr esp
 	      in
-		for i = 0 to depth - 1 do Printf.eprintf " " done;
+		(*for i = 0 to depth - 1 do Printf.eprintf " " done;
 		Printf.eprintf
 		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
-		  last_eip eip ret_addr;
+		  last_eip eip ret_addr;*)
 		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+		if not (Hashtbl.mem dcfg_map eip)
+		then (
+			let dcfg = new dynamic_cfg eip in
+			Hashtbl.replace dcfg_map eip (Some dcfg);
+			);
+		switch_dcfg eip;
+		(match current_dcfg with
+		| None -> ()
+		| Some g -> g#reset); 
 		(* If we had a command-line option for expensive sanity
 		   checks, we could use it here. For now, just comment it
 		   out: *)
@@ -932,13 +1097,23 @@ struct
 		pop_callstack (Int64.sub esp size);
 		if false then
 		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-		let depth = List.length call_stack in
+		(*let depth = List.length call_stack in
 		  for i = 0 to depth - 2 do Printf.eprintf " " done;
 		  Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
-		    last_eip eip;
+		    last_eip eip;*)
 		  pop_callstack esp;
 		  if false then
 		    g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
+		(*switch dcfg*)
+		if List.length call_stack != 0 then (
+			let (_, _, call_to, _) = List.hd call_stack in
+			if Hashtbl.mem dcfg_map call_to 
+			then (
+				switch_dcfg call_to;
+				(*Printf.eprintf "Now in the procedure start at 0x%08Lx\n" call_to*)
+				)
+			else failwith "attempt to access an unknown activation" 
+			);
 	  | _ -> ()
 
     method jump_hook last_insn last_eip eip =
@@ -1807,6 +1982,16 @@ struct
 	| X64 -> self#simplify_x64_regs
 	| ARM -> self#simplify_arm_regs
 
+	method store_exp addr e ty = (
+		Printf.printf "store_exp: mem[0x%08Lx] <- %s\n" addr (V.exp_to_string e);
+		let e' = D.from_symbolic e in
+		match ty with
+		| V.REG_8 -> self#store_byte addr e'
+		| V.REG_16 -> self#store_short addr e'
+		| V.REG_32 -> self#store_word addr e'
+		| V.REG_64 -> self#store_long addr e'
+		| _ -> ())
+
     method store_byte ?(prov = Interval_tree.Internal) addr b = 
 	mem#store_byte ~prov addr b;
 	self#run_store_hooks addr 8
@@ -1897,6 +2082,13 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       snap_insn_count <- insn_count;
       let snap_handler h = h#make_snap in
+      mem#make_snap ();
+      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
+      dcfg_snap <- current_dcfg;
+      call_stack_snap <- call_stack;
+      (match current_dcfg with
+	| None -> ()
+	| Some dcfg -> dcfg#make_snap);
 	List.iter snap_handler !special_handler_list_ref
 
     val mutable fuzz_finish_reasons = []
@@ -1942,6 +2134,15 @@ struct
       insn_count <- snap_insn_count;
       fuzz_finish_reasons <- [];
       disqualified <- false;
+      current_dcfg <- dcfg_snap;
+	(match current_dcfg with
+	| Some dcfg -> (dcfg#reset_snap)
+	| None -> ());
+      call_stack <- call_stack_snap;
+	List.iter (fun (esp, last_eip, eip, ret_addr) -> Printf.printf "(0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)\n" esp last_eip eip ret_addr) call_stack;
+	(*match (current_dcfg, dcfg_snap) with
+	| (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
+	| _ -> (Printf.printf "reset: /_>");*)
       Hashtbl.clear event_details;
       event_history <- [];
       List.iter reset !special_handler_list_ref
@@ -1967,19 +2168,21 @@ struct
       in
         find_some_sl (!special_handler_list_ref @ universal_special_handlers)
 
-    method private get_int_var ((_,vname,ty) as var) =
+    method private get_int_var ((i,vname,ty) as var) =
       try
 	let v = V.VarHash.find reg_store var in
 	  (* if v = D.uninit then
 	     Printf.eprintf "Warning: read uninitialized register %s\n"
 	     vname; *)
-	  v
+          v
       with
 	| Not_found ->
 	    (try 
-	       V.VarHash.find temps var
+	       (let res = V.VarHash.find temps var in
+		res
+		)
 	     with
-	       | Not_found -> V.pp_var print_string var; 
+	       | Not_found -> V.pp_var print_string var; Printf.printf "	(%d, %s)\n" i vname; 
 		   failwith "Unknown variable")
 
     method get_bit_var_d   reg = self#get_int_var (Hashtbl.find reg_to_var reg)
@@ -2022,6 +2225,7 @@ struct
 							 (D.to_concrete_32 value))
       | _ -> ());
       *)
+			(*Printf.printf "set_int_var: (%d, %s)\n" reg_num reg_name;*)
       if reg_name = (reg_to_regstr R_ESP) then (
         let int64Value = (D.to_concrete_32 value) in
         (match pm with
@@ -2541,6 +2745,7 @@ struct
 	v
 
     method private eval_int_exp_simplify_ty exp =
+      Printf.printf "eval_int_exp_simplify: %s\n" (V.exp_to_string exp);      
       let (v, ty) = self#eval_int_exp_ty exp in
       let v' =  match (v, ty) with
 	| (v, V.REG_1) -> form_man#simplify1 v
@@ -2733,7 +2938,7 @@ struct
 	loop sl
 
     method run () =
-      self#run_sl is_true insns
+			self#run_sl is_true insns
 
     method run_to_jump () =
       let check_for_pc lab = (String.sub lab 0 3) <> "pc_" in

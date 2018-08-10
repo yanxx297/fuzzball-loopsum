@@ -151,6 +151,7 @@ let build_simplest_equations root =
     Printf.eprintf "Beginning of translation:\n";
     List.iter (fun s -> Vine.stmt_to_channel stderr s) stmts;
     Printf.eprintf "End of translation\n";
+    flush stdout;
     flush stderr;
   *)
   (* JTT - 12/2/15 this is horrible

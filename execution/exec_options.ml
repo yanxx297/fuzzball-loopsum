@@ -234,6 +234,7 @@ let opt_arch_string = ref None
 let opt_decree = ref false
 let opt_symbolic_receive = ref false
 let opt_concolic_receive = ref false
+let opt_concolic_read = ref false
 let opt_max_receives = ref None
 let opt_max_transmits = ref None
 let opt_max_receive_bytes = ref None
@@ -329,6 +330,15 @@ let get_program_name () =
 let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None
+
+let opt_trace_loopsum = ref false
+let opt_trace_loop = ref false
+let opt_trace_ivt = ref false
+let opt_trace_gt = ref false
+let opt_trace_precond = ref false
+let opt_trace_postcond = ref false
+let opt_print_dt = ref false
+
 let opt_log_random = ref Never
 let opt_log_eip_sequence = ref false
 let opt_big_alloc = ref None
@@ -342,3 +352,10 @@ and opt_single_weirdness_threshold = ref 100
 
 let opt_stop_on_error_msgs = ref []
 let opt_error_msg_threshold = ref None
+
+type loop_stat = 
+	| EnterLoop
+	| ExitLoop
+	| InLoop
+	| NotInLoop
+        | ErrLoop

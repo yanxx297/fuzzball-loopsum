@@ -235,6 +235,9 @@ let  getParameterTable () =
     add_parameter "-trace-sym-addrs" (Bool EO.opt_trace_sym_addrs);
     add_parameter "-trace-temps" (Bool EO.opt_trace_temps);
     add_parameter "-trace-temps-encoded" (Bool EO.opt_trace_temps_encoded);
+    add_parameter "-trace-loop" (Bool EO.opt_trace_loop);
+    add_parameter "-trace-ivt" (Bool EO.opt_trace_ivt);
+    add_parameter "-trace-gt" (Bool EO.opt_trace_gt);
     add_parameter "-gc_stats" (Bool EO.opt_gc_stats);
     add_parameter "-time_stats" (Bool EO.opt_time_stats);
     add_parameter "-periodic_stats" (Int64Opt EO.opt_periodic_stats);

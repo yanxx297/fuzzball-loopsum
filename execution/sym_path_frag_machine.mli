@@ -105,6 +105,7 @@ sig
     method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
+    method store_exp : int64 -> Vine.exp -> Vine.typ -> unit
     method printable_word_reg : Fragment_machine.register_name -> string
     method printable_long_reg : Fragment_machine.register_name -> string
     method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
@@ -275,6 +276,32 @@ sig
     method before_first_branch : bool
     method get_start_eip : int64
     method set_start_eip : int64 -> unit
+    method set_text_range : int64 -> int64 -> unit
+    method loop_heur : int64 -> int64 -> bool * int64
+		method branch_heur : int64 -> int64 -> int64 option
+		method in_loop : int64 -> bool
+    method get_loop_header : int64
+    method add_iv : int64 -> Vine.exp -> unit
+    method clean_ivt : unit
+    method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> bool option
+    method print_dt : unit
+    method is_iv_cond : Vine.exp -> bool
+    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> int64 -> unit
+    method clean_gt : unit
+    method is_gt_cond : Vine.exp -> bool
+		method add_bd : int64 -> Vine.exp -> int64 -> unit
+		method check_loopsum : int64 ->
+         (Vine.exp -> bool option) ->
+         (Vine.typ -> Vine.exp -> Vine.exp) ->
+         ((bool -> Vine.exp) ->
+         (bool -> Vine.exp -> bool) ->
+         (bool -> unit) ->
+         (unit -> bool) -> (bool -> bool) -> int64 -> bool) ->
+         (int64 * Vine.exp) list * int64
+		method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+
+    method eval_cjmp_targ: int64 ->  int64  ->  D.t  ->  Vine.exp  ->  bool
+    method eval_cjmp_cond: Vine.exp ->  D.t * Vine.exp
 
     method schedule_proc : unit
     method alloc_proc : (unit -> unit) -> unit

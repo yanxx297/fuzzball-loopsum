@@ -84,6 +84,7 @@ sig
     method tempify_with_callback :
       (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
 
+		method make_post_cond : Vine.exp -> Vine.typ -> Vine.exp
     method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
 
     method make_table_lookup : (D.t list) -> Vine.exp -> int -> Vine.typ -> D.t

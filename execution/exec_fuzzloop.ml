@@ -44,6 +44,7 @@ let loop_w_stats count fn =
 		(Printf.eprintf "Wall time %f sec, %f total\n"
 		   (wtime -. old_wtime) (wtime -. start_wtime)));
 	     flush stdout;
+	     flush stderr;
 	     (match !opt_total_timeout with
 		| None -> ()
 		| Some t ->
@@ -122,6 +123,7 @@ let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma ex
     if !opt_trace_setup
     then Printf.eprintf "Pre-fuzzing execution...\n";
     flush stdout;
+    flush stderr;
     runloop fm start_eip asmir_gamma prefuzz
   with
   | StartSymbolic(eip, setup) ->
@@ -233,6 +235,7 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
       stop ("after printing error message " ^ s) false
   | FinishNow -> (* split into multiple cases *)
     Printf.eprintf "Catching finish now\n";
+    flush stdout;
     flush stderr;
     log_fuzz_restart Log.always ":-finish-immediately" false fm;
     stop "on -finish_immediately" false
@@ -252,14 +255,20 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always ":partial_dealloc" true fm;
     stop "on deallocating a size different than that allocated" true
   | Unsafe_Memory_Access ->
+		(
     log_fuzz_restart Log.always ":unsafe_memory_access" true fm;
-    stop "on unsafe memory access" true
+    stop "on unsafe memory access" true;
+		if (fm#in_loop fm#get_eip) then Printf.printf "[Analysis]: Loop sum contributes to revealing this bug\n"
+		)
   | Uninitialized_Memory ->
     log_fuzz_restart Log.always ":uninitialized_memory_access" true fm;
     stop "use of uninitialized memory" true   
   | WeirdSymbolicAddress ->
+		(
     log_fuzz_restart Log.always ":weird-symbolic-address" false fm;
-    stop "use of weird symbolic address" true
+    stop "use of weird symbolic address" true;
+		if (fm#in_loop fm#get_eip) then Printf.printf "[Analysis]: Loop sum contributes to revealing this bug\n"
+		)
   | NotConcrete(_) ->
     log_fuzz_restart Log.always ":not_concrete" false fm;
     stop "Something's symbolic that oughtn't be." false;
@@ -283,11 +292,12 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
      | Some p -> add_periodic_hook fm p
      | None -> ());
   flush stdout;
+  flush stderr;
   if !opt_gc_stats then
     at_exit final_check_memory_usage;
   let fuzz_start_eip = ref opt_fuzz_start_eip
   and extra_setup = ref (fun () -> ())
-  and flush_print str = Printf.eprintf "%s" str; flush stdout
+  and flush_print str = Printf.eprintf "%s" str; flush stderr; flush stdout
   in
   (try
      fuzz_sighandle_setup fm;
@@ -342,4 +352,5 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
   if !opt_coverage_stats then
     Printf.eprintf "Final coverage: %d\n"
       (Hashtbl.length trans_cache);
+  if !opt_print_dt then fm#print_dt;
   periodic_stats fm true false

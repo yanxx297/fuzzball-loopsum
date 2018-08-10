@@ -351,15 +351,18 @@ struct
       match pm with
       | Some ptrmng ->
         if not (ptrmng#is_safe_read addr len) then
+					(Printf.printf "Unsafe mem: 0x%08Lx\n" addr;
           raise Unsafe_Memory_Access
+					)
       | _ -> ()
 
     method private validate_safe_write_addr_range ?(prov = Interval_tree.Internal) addr len =
       match pm with
       | Some ptrmng ->
         if not (ptrmng#is_safe_write ~prov addr len) then
-          raise Unsafe_Memory_Access
-	    
+          (Printf.printf "Unsafe mem: 0x%08Lx\n" addr;
+					raise Unsafe_Memory_Access
+	    		)
       | _ -> ()
 
     method on_missing m = missing <- m

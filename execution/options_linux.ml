@@ -92,6 +92,8 @@ let linux_cmdline_opts =
      " Make all data read by receive(2cgc) symbolic");
     ("-concolic-receive", Arg.Set(opt_concolic_receive),
      " Make all data read by receive(2cgc) concolic");
+    ("-concolic-read", Arg.Set(opt_concolic_read),
+     " Make all data read by linux syscall read");
     ("-max-receives", Arg.Int
        (fun i -> opt_max_receives := Some i),
      "NUM Stop path after too many receive(2cgc) calls");
@@ -162,6 +164,8 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	  lsh#set_proc_identities !Linux_loader.proc_identities;
 	List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
 	List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
+        if !opt_concolic_read then
+          lsh#add_symbolic_fd 0 true;
 	Linux_syscalls.linux_set_up_arm_kuser_page fm;
 	lsh#set_the_break linux_break;
 	fm#add_special_handler (lsh :> Fragment_machine.special_handler)

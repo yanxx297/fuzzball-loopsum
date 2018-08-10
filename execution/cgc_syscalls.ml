@@ -178,6 +178,7 @@ object(self)
 	 (match fd with
          | (1|2) -> Array.iter print_char bytes;
 	     flush stdout;
+	     flush stderr;
 	     success (Int64.of_int count)
          | _ ->
 	   let ufd = self#get_fd fd in
@@ -652,6 +653,7 @@ object(self)
 		   let v = load_word_or_zero ptr in
 		     Printf.eprintf ", %Ld (0x%08Lx)" (fix_s32 v) v);
 	    Printf.eprintf "\n";
+	    flush stderr;
 	    flush stdout
 	      
   method handle_special str : V.stmt list option =

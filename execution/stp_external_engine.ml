@@ -139,6 +139,7 @@ class stp_external_engine fname = object(self)
       if !opt_trace_solver then
 	Printf.eprintf "Solver command: %s\n" cmd;
       flush stdout;
+      flush stderr;
       let rcode = Sys.command cmd in
       let results = open_in (curr_fname ^ ".cvc.out") in
 	if rcode <> 0 then

@@ -250,6 +250,7 @@ let parse_mathsat_ce_line s v =
   let final = ref false in
   let rec loop s v =
     flush stdout;
+    flush stderr;
     let len = String.length s in
       match (s, v) with
 	| (s, None) when len > 4 &&

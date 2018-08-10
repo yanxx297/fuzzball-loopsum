@@ -427,6 +427,7 @@ struct
 	qe#add_condition cond_e;
 	Printf.eprintf "Target expr is %s\n" (V.exp_to_string target_e);
 	flush stdout;
+	flush stderr;
 	g_assert(self#check_sat target_eq V.exp_true <> None) 100 "Exec_influence.measure_influence_common";
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;

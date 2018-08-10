@@ -78,6 +78,7 @@ class pointer_management = object(self)
       self#is_overlapping_not_contained v1 v2 r1 r2
 
   method add_alloc addr len = 
+    flush stdout;
     flush stderr;
     if (len = Int64.zero) then
       (self#report [("tag", (`String ":zero-length-allocate"));
@@ -149,6 +150,7 @@ class pointer_management = object(self)
 	IT.print_interval this_interval;
 	Printf.eprintf "\n";
       *)
+      flush stdout;
       flush stderr;
       assign_ranges <- assign_ranges';
       io_ranges <- io_ranges'

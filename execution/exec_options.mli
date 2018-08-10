@@ -22,6 +22,13 @@ type div_0_notice =
 | Warn
 | Ignore
 
+type loop_stat = 
+	| EnterLoop
+	| ExitLoop
+	| InLoop
+	| NotInLoop
+	| ErrLoop
+
 val offset_strategy_of_string : string -> offset_strategy
 val random_notice_of_string : string -> random_notice
 
@@ -211,6 +218,7 @@ val opt_arch_string : string option ref
 val opt_decree : bool ref
 val opt_symbolic_receive : bool ref
 val opt_concolic_receive : bool ref
+val opt_concolic_read : bool ref
 val opt_max_receives : int option ref
 val opt_max_transmits : int option ref
 val opt_max_receive_bytes : int option ref
@@ -260,3 +268,12 @@ val opt_max_weirdness : int ref
 val opt_single_weirdness_threshold : int ref
 val opt_stop_on_error_msgs : string list ref
 val opt_error_msg_threshold : int option ref
+
+val opt_trace_loopsum : bool ref
+val opt_trace_loop : bool ref
+val opt_trace_ivt : bool ref
+val opt_trace_gt : bool ref
+val opt_trace_precond : bool ref
+val opt_trace_postcond : bool ref
+
+val opt_print_dt : bool ref

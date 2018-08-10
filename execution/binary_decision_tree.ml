@@ -342,6 +342,28 @@ class binary_decision_tree = object(self)
   val mutable best_heur = -1
   val mutable cur_heur = -1
 
+  method viz_tree = 
+    self#viz_bt
+
+  method private viz_bt = 
+    let fd = open_out "bdt_graph" in
+    let rec viz_node n =  
+      let n_id = n.ident in
+        Printf.fprintf fd "%d;\n" n_id;
+        (match get_f_child n with 
+           | Some(Some f) -> (Printf.fprintf fd "%d -> %d;\n" n_id f.ident ;viz_node f)
+           | _ -> ());
+        (match get_t_child n with 
+           | Some(Some t) -> (Printf.fprintf fd "%d -> %d;\n" n_id t.ident ;viz_node t)
+           | _ -> ());
+    in
+      Printf.fprintf fd "digraph G {\n";
+      let root = get_dt_node root_ident in
+        viz_node root;
+        Printf.fprintf fd "}\n";
+        close_out fd
+		
+	
   method init =
     let root = get_dt_node root_ident in
       root.query_children <- Some 0;
@@ -515,6 +537,7 @@ class binary_decision_tree = object(self)
        after the first decisions, and before calling start_new_query
        again. *)
     g_assert(cur.query_children <> None) 100 "Binary_decision_tree.start_new_query";
+    if cur.query_children = None then Printf.printf "warning: cur_query(%d) no childrens\n" cur.ident;
     if !opt_trace_decision_tree then
       Printf.eprintf "DT: New query, updating cur_query to cur %d\n" cur.ident;
     cur_query <- cur
@@ -526,6 +549,7 @@ class binary_decision_tree = object(self)
       | Some n ->
 	  Printf.eprintf "Current query node is %d with %d children\n"
 	    cur_query.ident n;
+			self#viz_tree;
 	  failwith "Too many children in start_new_query_binary"
 
   method count_query =
@@ -549,7 +573,7 @@ class binary_decision_tree = object(self)
 	(if cur.query_children = None then
 	   cur.query_children <- Some 0;
 	 (match cur_query.query_children with
-	    | None -> failwith "Count_query outside a query"
+	    | None -> (self#viz_tree; failwith "Count_query outside a query")
 	    | Some k when not cur.query_counted ->
 		if !opt_trace_decision_tree then	
 		  Printf.eprintf " -> %d" (k+1);
@@ -702,7 +726,9 @@ class binary_decision_tree = object(self)
 	 if Hashtbl.mem seen eip_loc then
 	   Printf.eprintf "However, I have previously seen a node with that eip.\n"
 	 else
-	   Printf.eprintf "And I've never seen a node with that eip.\n");
+	   (Printf.eprintf "And I've never seen a node with that eip.\n";
+           self#viz_tree)
+        );
       g_assert (cur.eip_loc = 0L || cur.eip_loc = eip_loc) 100
 	"Binary_decision_tree.try_extend 2";
       put_eip_loc cur eip_loc;
@@ -724,7 +750,7 @@ class binary_decision_tree = object(self)
 		      failwith "all_seen invariant failure")
 	       | (false, true) -> known false
 	       | (true, false) -> known true
-	       | (false, false) -> known (random_bit_gen ()))
+	       | (false, false) -> (known (random_bit_gen ())))
 	| (Some(Some f_kid), Some None, _) ->
 	    g_assert(not f_kid.all_seen) 100 "Binary_decision_tree.try_extend";
 	    known false
@@ -787,6 +813,7 @@ class binary_decision_tree = object(self)
 	       (Printf.eprintf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
 		  n.ident kid.ident;
 		self#print_tree stdout;
+		self#viz_tree;
 		g_assert(kid.all_seen) 100 "Binary_decision_tree.mark_all_seen_node");
 	 | _ -> ());
       (match get_t_child n with

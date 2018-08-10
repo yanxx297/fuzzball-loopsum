@@ -45,6 +45,7 @@ let check_memory_usage (fm:Fragment_machine.fragment_machine) trans_cache =
       (mem_nodes + reg_nodes + temps_nodes + tc_size + form_nodes);
     Printf.eprintf "/proc size is %s\n" (check_memory_size ());
     flush stdout;
+    flush stderr;
     Gc.print_stat stdout
 
 let final_check_memory_usage () =
@@ -53,6 +54,7 @@ let final_check_memory_usage () =
   Printf.eprintf "After final collection:\n";
   Printf.eprintf "/proc size is %s\n" (check_memory_size ());
   flush stdout;
+  flush stderr;
   Gc.print_stat stdout
 
 let last_dt_print_time = ref 0.0
@@ -89,6 +91,7 @@ let add_periodic_hook fm period =
     if Int64.rem !insn_count period = 0L then
       (Printf.eprintf "%Ld instructions executed\r" !insn_count;
        periodic_stats fm false false;
+       flush stderr;
        flush stdout)
   in
     fm#add_extra_eip_hook hook

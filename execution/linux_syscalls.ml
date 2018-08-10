@@ -347,6 +347,7 @@ object(self)
 	  | (1|2) ->
 	      Array.iter print_char bytes;
 	      flush stdout; (* Linux write(2) is unbuffered *)
+	      flush stderr;
 	      put_return (Int64.of_int count)
 	  | _ ->
 	      let str = string_of_char_array bytes and
@@ -761,10 +762,18 @@ object(self)
   method add_symbolic_file s is_concolic =
     Hashtbl.replace symbolic_fnames s is_concolic
 
+  method add_symbolic_fd fd is_concolic =
+    Hashtbl.replace symbolic_fds fd is_concolic
+
   method private save_sym_fd_positions = 
     Hashtbl.iter
-      (fun fd _ -> fd_info.(fd).snap_pos <- 
-	 Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR))
+      (fun fd _ -> 
+         try
+           fd_info.(fd).snap_pos <- 
+           Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
+         with
+           | Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ()
+      )
       symbolic_fds
 
   method private reset_sym_fd_positions = 
@@ -5307,6 +5316,7 @@ object(self)
 	| X64 -> fm#get_long_var ret_reg
       in
 	Printf.eprintf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
+	flush stderr;
 	flush stdout
 
   (* The address to which a sysenter-based syscall will return is

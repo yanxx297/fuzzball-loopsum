@@ -179,6 +179,7 @@ let load_segment fm ic phr virt_off is_main_prog =
   in
   let partial = Int64.rem phr.filesz 0x1000L in
   let vbase = Int64.add phr.vaddr virt_off in
+	if type_str = "text" then fm#set_text_range vbase (Int64.add vbase phr.filesz);
     if !opt_trace_setup then
       Printf.eprintf "Loading %10s segment from %08Lx to %08Lx\n"
 	type_str vbase
