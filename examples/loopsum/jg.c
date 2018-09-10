@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// Test loop condition operation jg/jle
 int func(int x){
 	int c = 0;
 	int p = 0;
@@ -14,8 +15,6 @@ int func(int x){
 			return 1;	/* error1 */
 		c = c + 1; 	/* IV2 */
 		x = x - 1; 	/* IV1 */
-		/* loop summarization doesn't work if the non-IV bellow exist */
-		//p = p + c;
 	}
 	if (c == 30)
 		return 2; 	/* error 2 */
@@ -27,7 +26,7 @@ int main(int argc, char **argv){
 	int input;
 	int res;
 	if (argc != 2){
-		fprintf(stderr, "Usage: input-dependent <integer>\n");
+		fprintf(stderr, "Usage: jg <integer>\n");
 		exit(-1);
 	}
 	input = atoi(argv[1]);
