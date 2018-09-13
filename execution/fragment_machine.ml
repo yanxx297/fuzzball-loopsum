@@ -559,7 +559,7 @@ class virtual fragment_machine = object
          ((bool -> Vine.exp) ->
          (bool -> Vine.exp -> bool) ->
          (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> int64 -> bool) ->
+         (unit -> bool) -> (bool -> bool) -> bool) ->
          (int64 * Vine.exp) list * int64
 
   method virtual schedule_proc : unit

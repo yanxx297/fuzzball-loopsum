@@ -1044,7 +1044,7 @@ class dynamic_cfg (eip : int64) = object(self)
                 | h::l' -> (
                     Printf.printf "Find a loop sum, \n";
                     let (enter_cond, exit_cond) = h in
-                    let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func eip in
+                    let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func in
                       if res then Printf.printf "and we decide to use it\n"
                       else Printf.printf "but we cannot use it for some reason\n";
                       if res then (match (check_cond enter_cond) with
@@ -1062,31 +1062,39 @@ class dynamic_cfg (eip : int64) = object(self)
               else loop l
           )
         | _ -> ([], 0L)(*raise (EmptyLss true)*)) in
-    let res = ((
-      match curr_loop with
+      (match curr_loop with
         | Some l -> (
-            Printf.printf "use loopsum: %s\n" (match l#check_use_loopsum with
-                                                 | Some true -> "Some true"
-                                                 | Some false -> "Some false"
-                                                 | None -> "None");
-            Printf.printf "done loopsum: %s\n" (match l#check_done_loopsum with
-                                                  | true -> "true"
-                                                  | false -> "false" );)
+            let use_loopsum = (
+              match l#check_use_loopsum with
+                | Some true -> "Some true"
+                | Some false -> "some false"
+                | None -> "None" )
+            in 
+            let done_loopsum = 
+              (match l#check_done_loopsum with
+                 | true -> "true"
+                 | false -> "false")
+            in              
+              Printf.printf "use loopsum: %s\n" use_loopsum;
+              Printf.printf "done loopsum: %s\n" done_loopsum;
+
+          )
         | None -> ());
-               try func () with
-                 | EmptyLss(r) -> (
-                     (match r with
-                        | (None | Some false) -> (				
-                            if (self#get_iter = 2) then (
-                              let b = try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func eip in
-                                Printf.printf "try_ext: return %B\n" b;
-                                Printf.printf "No valid loop sum to use\n");
-                            if r = Some false then (
-                              match curr_loop with
-                                | Some l -> (l#set_use_loopsum (Some false))
-                                | _ -> ()))
-                        | Some true -> ());
-                     ([], 0L))) in
+      let res = (
+        try func () with
+          | EmptyLss(r) -> (
+              (match r with
+                 | (None | Some false) -> (				
+                     if (self#get_iter = 2) then (
+                       let b = try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func in
+                         Printf.printf "try_ext: return %B\n" b;
+                         Printf.printf "No valid loop sum to use\n");
+                     if r = Some false then (
+                       match curr_loop with
+                         | Some l -> (l#set_use_loopsum (Some false))
+                         | _ -> ()))
+                 | Some true -> ());
+              ([], 0L))) in
       (match res with
          | ([], _) -> ()
          | _ -> (

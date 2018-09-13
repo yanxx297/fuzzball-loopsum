@@ -567,6 +567,10 @@ struct
 
     val sink_mem = new GM.granular_sink_memory
 
+    method private eip_ident ident =
+      let eip = self#get_eip in
+	Int64.logor (Int64.shift_left eip 16) (Int64.of_int ident)
+
     method private region r =
       match r with
 	| None -> (sink_mem :> (GM.granular_memory))
@@ -1388,14 +1392,17 @@ struct
       let eip = 
         (try self#get_eip with 
            | NotConcrete(_) -> 0L) in
-      let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func eip = (
+      let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
+      let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func = (
         dt#start_new_query;
-        let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func eip in
+        Printf.printf "Set eip_loc to 0x%Lx\n" (self#eip_ident ident);
+        let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func (self#eip_ident ident)
+        in          
           dt#count_query;
-          res) in
+          res) 
+      in
       let check_func cond = (
         dt#start_new_query;
-        let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
         let (res, _) = spfm#query_with_pc_choice cond true ident (fun() -> true) in
           dt#count_query;
           Some res) in	
@@ -2208,8 +2215,6 @@ struct
       then
 	let location = 
 	  self#eval_addr_exp_region addr_e 0x9000 (self#decide_maxval "Store") in
-	let r = ref None in
-	let addr = ref 0L in
         let v = match ty with
           | V.REG_1 -> D.to_symbolic_1 value
           | V.REG_8 -> D.to_symbolic_8 value
@@ -2219,7 +2224,10 @@ struct
           | _ -> failwith "Unexpected type in srfm#handle_store"
         in
 	let v' = (self#simplify_exp ty v) in
-	spfm#add_iv !addr v';
+        let addr = self#eval_addr_exp addr_e in
+	spfm#add_iv addr v';
+	let r = ref None in
+	let addr = ref 0L in
 	let table_store_status =
 	  match location with
 	  | TableLocation(r, off_exp, cloc) ->
