@@ -527,7 +527,6 @@ let cmdline_opts =
      (Arg.Unit
 	(fun () ->
 	  opt_trace_loopsum := true;
-	  opt_trace_loop := true;
 	  opt_trace_ivt := true;
 	  opt_trace_gt := true;
 	  opt_trace_precond := true;

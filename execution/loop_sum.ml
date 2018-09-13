@@ -219,7 +219,8 @@ class loop_record tail header g= object(self)
                       if !opt_trace_ivt then 
                         Printf.eprintf "iv cond: %s \n" (V.exp_to_string cond);
                       let cond' = simplify_cond s_func cond in
-                        (if !opt_trace_ivt then Printf.printf "= iv cond': %s \n" (V.exp_to_string cond');
+                        (if !opt_trace_ivt then 
+                           Printf.printf "Simplify: %s -> %s \n" (V.exp_to_string cond) (V.exp_to_string cond');
                          match cond' with
                            | V.Constant(V.Int(V.REG_1, 1L)) -> ()
                            | V.Constant(V.Int(V.REG_1, 0L)) -> self#clean_ivt
@@ -243,9 +244,10 @@ class loop_record tail header g= object(self)
 
   method in_loop eip = 
     let res = Hashtbl.mem loop_body eip in
-      (match res with
-         | true -> (Printf.eprintf "0x%08Lx is in the loop <0x%08Lx>\n" eip id)
-         | false  -> (Printf.eprintf "0x%08Lx is not in the loop <0x%08Lx>\n" eip id));
+      if !opt_trace_loop then
+        (match res with
+           | true -> (Printf.eprintf "0x%08Lx is in the loop <0x%08Lx>\n" eip id)
+           | false  -> (Printf.eprintf "0x%08Lx is not in the loop <0x%08Lx>\n" eip id));
       res
 
   method private replace_iv (addr, v0, v, v', dv) = 
@@ -364,7 +366,11 @@ class loop_record tail header g= object(self)
                              else Some (V.BinOp(V.MINUS, lhs, rhs))
                          | (None | Some true) -> 
                              (**TODO: handle IOF while computing D = lhs - rhs, when lhs >0 and rhs <0*)
-                             (None))
+(*
+                             (if true then
+                                failwith "lhs >0 and rhs <0";
+ *)
+                               (None))
                   | Some false -> (None))
          | V.LE -> (let cond = V.BinOp(V.LT, rhs, lhs) in 
                     let res = check_cond cond in
@@ -386,16 +392,16 @@ class loop_record tail header g= object(self)
                  | Some e -> (ec)
                  | None -> (ecfunc d dD)) 
         | None -> (ecfunc d dD)
-    ) in	
+    ) in
+      (*For each case, compute dd, check IOF according to D and dd, compute EC if not yet*)
+      (*check whether dd' = dd, and then copy D' to D at the end*)
       (match exp with
-         | None -> ()
+         | None -> (Printf.printf "add_g: fail to compute D\n")
          | Some e -> (
              match self#gt_search addr with
                | Some g -> (
                    let (_, ec, op, _, d0_opt, d_opt, d_opt', dd_opt, eeip) = g in
                      if not (d_opt' = exp) then self#replace_g (addr, ec, op, ty, d0_opt, d_opt, exp, dd_opt, eeip);
-                     (*For each case, compute dd, check IOF according to D and dd, compute EC if not yet*)
-                     (*check whether dd' = dd, and then copy D' to D at the end*)
                      let (dist_opt, dD_opt, eCount_opt) = 
                        (match (d_opt, exp) with
                           | (Some d, Some d') -> 
@@ -446,7 +452,7 @@ class loop_record tail header g= object(self)
                                                     | (Some false | None) -> 
                                                         ((Some iof_d, Some iof_dd, (compute_ec ec_s iof_d' dd' addr))
                                                         )))
-                                          | _  -> failwith "Unexpected SLE situation: this should not happen")
+                                          | _  -> failwith "Unexpected SLT situation: this should not happen")
                                  | V.LE -> 
                                      (let cond1 = V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d')
                                       and cond2 = V.BinOp(V.LT, d', d) in
@@ -466,7 +472,7 @@ class loop_record tail header g= object(self)
                                                     | Some true -> (Some iof_d, Some dd', (compute_ec ec_u iof_d dd' addr))
                                                     | (None | Some false) -> (Some iof_d, Some dd', (compute_ec ec_u iof_d' dd' addr)))
                                               )
-                                          | _ -> failwith "Unexpected SLE situation: this should not happen")
+                                          | _ -> failwith "Unexpected LE situation: this should not happen")
                                  | V.LT -> 
                                      (let cond1 = V.BinOp(V.LE, V.Constant(V.Int(ty, 0L)), d')
                                       (**cond1 may not be necessary, since an unsigend int is always >= 0*)
@@ -541,9 +547,9 @@ class loop_record tail header g= object(self)
 
   method print_ivt = 
     let loop i (addr, v0, v, v', dv) = (
-      Printf.printf "[%d] mem[0x%08Lx] = %s " i addr (V.exp_to_string v0);
+      Printf.printf "[%d]\tmem[0x%08Lx] = %s " i addr (V.exp_to_string v0);
       match dv with
-        | Some d -> Printf.printf "(+ %s)\n" (V.exp_to_string d)
+        | Some d -> Printf.printf "\t(+ %s)\n" (V.exp_to_string d)
         | None -> Printf.printf "\n"
     )in
       List.iteri loop ivt
@@ -1023,7 +1029,7 @@ class dynamic_cfg (eip : int64) = object(self)
                    if lp#check_use_loopsum = None || not (lp#check_done_loopsum = true) then
                      raise (EmptyLss (None)))
                | None -> raise (EmptyLss (None)));
-            (*Printf.printf "check_LS eip: 0x%08Lx\n" eip;*)
+            Printf.printf "check_LS eip: 0x%08Lx\n" eip;
             let rec choose_guard l = (
               match l with
                 | h::l' -> (
