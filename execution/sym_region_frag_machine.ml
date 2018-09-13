@@ -1143,16 +1143,37 @@ struct
                           | _ -> failwith "simplify_exp: illegal typ") in
                D.to_symbolic_1 res)
 
+    (* Analyze the condition to get right and left side*)
     method eval_cjmp exp targ1 targ2 =
-      (*Printf.printf "original cjmp cond: \n";
-       Printf.printf "%s\n" (V.exp_to_string exp);*)
       let (v, e) = self#eval_cjmp_cond exp in
       let rec loop e targ = (
-        Printf.printf "eval_cjmp > loop: %s\n" (V.exp_to_string e);
+        let msg = "Check loop cond" in
         match e with
-          | V.BinOp(V.EQ, lhs, (V.Constant(_) as rhs)) -> 
-              (if targ = targ2 then (Some lhs, Some rhs, V.EQ) else 
+          | V.BinOp(V.EQ, lhs, (V.Constant(_) as rhs)) ->
+              (* je/jne *)
+              (if !opt_trace_loopsum then
+                 Printf.printf "%s (je/jne) %s\n" msg (V.exp_to_string e);
+               if targ = targ2 then (Some lhs, Some rhs, V.EQ) else 
                  (Some lhs, Some rhs, V.NEQ))
+          | V.BinOp(V.SLT, (V.BinOp(V.PLUS, _, _) as lhs), (V.Constant(_) as rhs)) ->
+              (* jl/jge*)
+              (if !opt_trace_loopsum then
+                 Printf.printf "%s (jl/jge) %s\n" msg (V.exp_to_string e);
+               if targ = targ2 then (Some lhs, Some rhs, V.SLT) else (Some rhs, Some lhs, V.SLE))
+          | V.BinOp(V.BITOR, V.BinOp(V.SLT, _, _), V.BinOp(V.EQ, lhs, rhs)) ->
+              (* jg/jle *)
+              (if !opt_trace_loopsum then
+                 Printf.printf "%s (jg/jle) %s\n" msg (V.exp_to_string e);
+               if targ = targ2 then (Some lhs, Some rhs, V.SLE) else (Some rhs, Some lhs, V.SLT))
+          | V.Cast(V.CAST_HIGH, V.REG_1, V.BinOp(V.PLUS, lhs, rhs)) ->
+              (* js/jns *)
+              (if !opt_trace_loopsum then
+                 Printf.printf "%s (js/jns) %s\n" msg (V.exp_to_string e);
+               if targ = targ2 then (Some lhs, Some (V.UnOp(V.NEG, rhs)), V.SLT) 
+               else (Some (V.UnOp(V.NEG, rhs)), Some lhs, V.SLE))
+          | V.Lval(V.Temp(var)) -> 
+              (FormMan.if_expr_temp form_man var (fun e' -> loop e' targ) (None, None, V.NEQ) (fun v -> ()))
+          (* depricated code bellow*)
           | V.BinOp(V.BITOR, (V.BinOp(V.EQ, _, _) (*as zf*)), V.BinOp(V.XOR, V.Cast(V.CAST_HIGH, V.REG_1, _), sf)) -> 
               (*jle: (a == b)|(cast() ^ (SF))*)
               loop sf targ
@@ -1188,15 +1209,14 @@ struct
               (*jbe/ja*)
               (if targ = targ2 then (Some lhs, Some rhs, V.LE) else 
                  (Some rhs, Some lhs, V.LT)) 
-          | V.Lval(V.Temp(var)) -> ((*Printf.printf "Lval(Temp)\n";*)FormMan.if_expr_temp form_man var (fun e' -> loop e' targ) (None, None, V.NEQ) (fun v -> ()))
+          | V.BinOp(op, _, _) -> (Printf.printf "Operation: %s\n" (V.binop_to_string op); (None, None, V.NEQ))
           | _ -> (None, None, V.NEQ))
       in
-      let b = self#eval_cjmp_targ targ1 targ2 v e in (
-        match spfm#loop_heur targ1 targ2 with
+      let b = self#eval_cjmp_targ targ1 targ2 v e in 
+        (match spfm#loop_heur targ1 targ2 with
           | (true, targ) -> (
               (*targ' : real targ choosen by cjmp_choose*)
               (*targ : the in-loop targ*)
-              Printf.printf "eval_cjmp: flags = <%s>\n" (V.exp_to_string exp);
               if not (targ = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) || e = V.Constant(V.Int(V.REG_1, 0L))) 
               then (
                 let (lhs_opt, rhs_opt, op) = (loop e targ) in
@@ -1217,21 +1237,24 @@ struct
                              if targ = targ' then (
                                let eeip = (
                                  Printf.printf "targ = 0x%08Lx\n" targ;
-                                 Printf.printf "targ' = 0x%08Lx\n" targ';
                                  Printf.printf "targ1 = 0x%08Lx\n" targ1;
                                  Printf.printf "targ2 = 0x%08Lx\n" targ2;
                                  if targ = targ1 then targ2 else targ1) in
                                let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in
-                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check_cond eeip)) 
-                     | _ -> ()
+                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check_cond eeip)
+                             else (
+                               Printf.printf "Failed to create gt entry: targ = 0x%Lx, targ' = 0x%Lx\n" targ targ'
+                             )) 
+                     | (Some lhs, _) -> (Printf.printf "Only lhs: %s\n" (V.exp_to_string lhs))
+                     | (_, Some rhs) -> (Printf.printf "Only rhs: %s\n" (V.exp_to_string rhs))
+                     | _ -> (Printf.printf "Neither lhs nor rhs available\n")
                   )) 
             )
           | _ -> ());
-                                                     (match b with
-                                                        | true -> self#add_bd (self#get_eip) e targ1
-                                                        | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2);
-                                                     b
-		 		
+        (match b with
+           | true -> self#add_bd (self#get_eip) e targ1
+           | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2);
+        b
 
     method private register_num reg =
       match reg with
