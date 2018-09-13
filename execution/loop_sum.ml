@@ -15,35 +15,34 @@ type loop_relation = Same | Parent | Child | Unknown
 type ls_ent = V.exp * (int64 * V.exp) list * int64
 
 let simplify_cond simplify exp = 
-  let rec is_flag e = (match e with
-                         | V.BinOp(op, exp1, exp2) -> (
-                             match op with
-                               | (V.EQ | V.NEQ | V.SLT | V.SLE | V.LT | V.LE) -> true
-                               | _ -> ((is_flag exp1)&&(is_flag exp2))
-                           )
-                         | _ -> (false)) in
+  let rec is_flag e = 
+    (match e with
+       | V.BinOp(op, exp1, exp2) -> 
+           (match op with                
+              | (V.EQ | V.NEQ | V.SLT | V.SLE | V.LT | V.LE) -> true
+              | _ -> ((is_flag exp1)&&(is_flag exp2)))
+       | _ -> (false)) in
     if is_flag exp then simplify exp else exp
 
-let maybe_check_cond check_func s_func cond tag opt =
-  if opt then Printf.printf "%s cond: %s " tag (V.exp_to_string cond);
-  let cond' = simplify_cond (s_func V.REG_1) cond in
-    if opt then (
-      Printf.printf "\n";
-      Printf.printf "= %s cond': %s \n" tag (V.exp_to_string cond'));
+let check_cond check_func s_func cond =
+  let cond' = simplify_cond (s_func V.REG_1) cond in 
+  let str = Printf.sprintf "Check condition %s" (V.exp_to_string cond')  
+  in
     let res = 
       (match cond' with
          | V.Constant(V.Int(V.REG_1, 1L)) -> Some true
          | V.Constant(V.Int(V.REG_1, 0L)) -> Some false
-         | _ -> (
-             let dt_res = check_func (cond') in 
-               (match dt_res with
-                  | (None | Some true) -> (
-                      let rs = (if dt_res = None then "None" else "Some true") in
-                        if opt then Printf.printf "is feasible(%s)\n" rs)
-                  | Some false -> (
-                      if opt then Printf.printf "is infeasible\n"));
-               dt_res)
-      ) in
+         | _ -> (check_func (cond)))
+    in
+      if !opt_trace_loopsum then
+        (let tristate = 
+           (match res with
+              | Some true -> "true only"
+              | Some false -> "false only"
+              | None -> "true or false")
+         in
+           Printf.printf "%s -> %s\n" str tristate
+        );
       res
 
 class simple_node id = object(self)
@@ -291,16 +290,18 @@ class loop_record tail header g= object(self)
       List.iter loop gt;
       !res
 
+  (* Add or update a gate table entry*)
   method add_g (addr: int64) lhs rhs op' ty s_func check (eeip: int64) =
-    Printf.printf "add_g: iter = %d\n" iter;
+    Printf.printf "add_g: iter %d, op = %s\n" iter (V.binop_to_string op');
     let check_cond cond = (
-      let res = maybe_check_cond check s_func cond "gt" !opt_trace_gt in (
-        match res with
+      let res = check_cond check s_func cond in
+        (match res with
           | (None | Some true) -> Hashtbl.replace g_cond_t cond ()
           | Some false -> ());
-                                                                         res)
+        res)
     in
-    let ec_s d dD = (	(*(D+dD-1)/(dD)*)
+    (* (D+dD-1)/(dD) *)
+    let ec_s d dD = (
       let sum = V.BinOp(V.PLUS, d, dD) in
       let no_iof = check_cond (V.BinOp(V.SLT, d, sum)) in
         match no_iof with 
@@ -1001,10 +1002,12 @@ class dynamic_cfg (eip : int64) = object(self)
     let count = Stack.length loop_stack in
       Printf.printf "Current dcfg (0x%08Lx) have %d loops in active\n" header count 
 
+  (* Check whether any existing loop summarization that can fit current
+   condition, and apply the loopsum if find any *)
   method check_loopsum eip check s_func try_ext = (
     (*Printf.printf "check_loopsum\n";*)
     let curr_loop = self#get_current_loop in
-    let check_cond cond = maybe_check_cond check s_func cond "loopsum" true in
+    let check_cond cond = check_cond check s_func cond in
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
