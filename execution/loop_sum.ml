@@ -1,10 +1,20 @@
+(* 
+ This file contains most code implementing the loop summarization algorithm
+ descried in Automatic Partial Loop Summarization in Dynamic Test Generation
+ (ISSTA'11.)
+ Our implementation are different with the original paper in several ways:
+ - The original algorithm is based on concolic execution, while our 
+ implementation is pure symbolic.
+*)
+
 module DS = Set.Make (Int64);;
 module V = Vine;;
 
-(**Some true := find some LS whose precond is satisfiable, but we don't use them*)
-(**Some false := No satisfiable LS*)
-(**None := No LS at all*)
 exception EmptyLss of bool option
+(* Some true := find some LS whose precond is satisfiable, but we don't use them*)
+(* Some false := No satisfiable LS*)
+(* None := No LS at all*)
+
 exception LsNotReady
 
 open Exec_options;;
@@ -267,7 +277,8 @@ class loop_record tail header g= object(self)
       | Some iv -> (
           let (addr, v0, v, v', dv) = iv in
             if not (v' = exp) then self#replace_iv (addr, v0, v, exp, dv);
-            if !opt_trace_ivt then Printf.printf "add_iv: replace %s with %s at 0x%08Lx\n" (V.exp_to_string v') (V.exp_to_string exp) addr)
+            if !opt_trace_ivt then 
+              Printf.printf "add_iv: replace %s with %s at 0x%08Lx\n" (V.exp_to_string v') (V.exp_to_string exp) addr)
       | None -> (
           if iter = 1 then (
             ivt <- ivt @ [(addr, exp, exp, exp, None)];
@@ -278,11 +289,15 @@ class loop_record tail header g= object(self)
 
   method clean_ivt = 
     if !opt_trace_ivt then Printf.printf "clean IVT of 0x%08Lx\n" id;
-    ivt <- [] 
+    ivt <- [];
 
-  val mutable gt = [] (** eip | (EC, op, ty, D0, D, D', dD, exit_eip)*)
-  val iof_cache = Hashtbl.create 10 (**(addr | _): A list of guards that are iof*)
-  val g_cond_t = Hashtbl.create 10 (**TODO: figure out whether remove this container*)
+  (*Gate table: (eip | (EC, op, ty, D0, D, D', dD, exit_eip)*)
+  (* EC: the expected execution count*)
+  val mutable gt = [] 
+  val g_cond_t = Hashtbl.create 10 (**TODO: figure out whether to remove this container*)
+
+  (**(addr | _): A list of guards that are integer overflow*)
+  val iof_cache = Hashtbl.create 10   
 
   method private gt_search addr = 
     let res = ref None in
@@ -311,8 +326,10 @@ class loop_record tail header g= object(self)
           | Some false -> Some (V.BinOp(V.PLUS, V.BinOp(
               V.DIVIDE, V.BinOp(V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), 
                                         V.Constant(V.Int(ty, 1L)))) 
-    ) in		
-    let ec_u d dD = (	(*(D+dD-1)/(dD) for unsigend operands*)
+    ) 
+    in	
+    (* (D+dD-1)/(dD) for unsigend operands *)
+    let ec_u d dD = (
       let sum = V.BinOp(V.PLUS, d, dD) in
       let no_iof = check_cond (V.BinOp(V.LT, d, sum)) in
         match no_iof with 
@@ -321,22 +338,28 @@ class loop_record tail header g= object(self)
               V.DIVIDE, V.BinOp(V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), 
                                         V.Constant(V.Int(ty, 1L))))  
     ) in
+      (* Compute D of the current iteration *)
+      (* loop_cond := if true, stay in the loop*) 
+      (* iof_cond := if true, integer overflow can happen when computing D*)
     let exp = 
-      (*Compute D of the current iteration*)
       (match op' with
          | V.EQ -> 
              (let d = (V.BinOp(V.MINUS, lhs, rhs)) in
                 Some d
              )
          | V.SLE -> (
-             let loop_cond = V.BinOp(V.SLT, rhs, lhs) 
-             and iof_cond = 
+             let loop_cond = V.BinOp(V.SLT, rhs, lhs)
+             in
+             let iof_cond = 
                (*lhs>0 && rhs<0 && lhs-rhs<lhs*)
                V.BinOp(V.BITAND, 
                        V.BinOp(V.BITAND, 
                                V.BinOp(V.SLT, rhs, V.Constant(V.Int(ty, 0L))), 
                                V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
-                       V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) in 
+                       V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
+             in 
+               Printf.printf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
+               Printf.printf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
                match check_cond loop_cond with
                  | (None | Some true) -> 
                      (match check_cond iof_cond with
@@ -349,14 +372,18 @@ class loop_record tail header g= object(self)
                             (None))
                  | Some false -> (None))
          | V.SLT -> 
-             (let loop_cond = V.BinOp(V.SLE, rhs, lhs) 
-              and iof_cond = 
+             (let loop_cond = V.BinOp(V.SLE, rhs, lhs)
+              in
+              let iof_cond = 
                 (*lhs>0 && rhs<0 && lhs-rhs<lhs*)
                 V.BinOp(V.BITAND, 
                         V.BinOp(V.BITAND, 
                                 V.BinOp(V.SLT, rhs, V.Constant(V.Int(ty, 0L))), 
                                 V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
-                        V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) in 
+                        V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
+              in 
+                Printf.printf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
+                Printf.printf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
                 match check_cond loop_cond with
                   | (None | Some true) -> 
                       (match check_cond iof_cond with
@@ -383,7 +410,8 @@ class loop_record tail header g= object(self)
                         | (None | Some true) -> Some (V.BinOp(V.MINUS, lhs, rhs))
                         | Some false -> (None))
          | _  -> None
-      ) in
+      ) 
+    in
     let compute_ec ecfunc d dD addr = (
       match (self#gt_search addr) with
         | Some g -> 
@@ -493,33 +521,34 @@ class loop_record tail header g= object(self)
                                                     | Some true -> (Some iof_d, Some dd', (compute_ec ec_u iof_d dd' addr))
                                                     | (None | Some false) -> (Some iof_d, Some dd', (compute_ec ec_u iof_d' dd' addr)))
                                               )
-                                          | _ -> failwith "Unexpected SLE situation: this should not happen")
+                                          | _ -> failwith "Unexpected LT situation: this should not happen")
                                  | V.EQ -> 
-                                     (	let dd' = s_func ty (V.BinOp(V.MINUS, d', d)) in
-                                       let loop_cond = V.BinOp(V.EQ, d', V.Constant(V.Int(ty, 0L))) in
-                                         (**TODO: Move this to exp?*)
-                                         match (check_cond loop_cond) with
-                                           | Some true -> (None, None, None)
-                                           | _ -> 
-                                               (let iof_cond = V.BinOp(V.EQ, dd', V.Constant(V.Int(ty, 0L))) in
-                                                  match (check_cond iof_cond) with
-                                                    | Some true -> 
-                                                        (Printf.printf "dd' = 0: Infinity loop\n";(None, None, None))
-                                                    | _ -> 
-                                                        (let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
-                                                         and cond2 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), dd') in
-                                                           (match (check_cond cond1, check_cond cond2) with 
-                                                              | (None, None)
-                                                              | ((Some true | None), Some false) -> 
-                                                                  (*If Both situations are possible, take the (D > 0, d < 0) case first*)
-                                                                  (Printf.printf "default EQ\n";
-                                                                   (Some d', Some dd',(compute_ec ec_s d'(V.UnOp(V.NEG, dd')) addr)))
-                                                              | (Some false, (Some true | None)) -> 
-                                                                  (Printf.printf "inverse EQ\n";
-                                                                   (Some d', Some dd', (compute_ec ec_s (V.UnOp(V.NEG, d')) dd' addr)))
-                                                              | _ -> 
-                                                                  (** TODO: Handle integer overflow (dD and D on the same direction)*)
-                                                                  (None, None, None))))
+                                     (let dd' = s_func ty (V.BinOp(V.MINUS, d', d)) in
+                                      let loop_cond = V.BinOp(V.EQ, d', V.Constant(V.Int(ty, 0L))) in
+                                        (**TODO: Move this to exp?*)
+                                        match (check_cond loop_cond) with
+                                          | Some true -> (None, None, None)
+                                          | _ -> 
+                                              (let iof_cond = V.BinOp(V.EQ, dd', V.Constant(V.Int(ty, 0L))) in
+                                                 match (check_cond iof_cond) with
+                                                   | Some true -> 
+                                                       (Printf.printf "dd' = 0: Infinity loop\n";
+                                                        (None, None, None))
+                                                   | _ -> 
+                                                       (let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
+                                                        and cond2 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), dd') in
+                                                          (match (check_cond cond1, check_cond cond2) with 
+                                                             | (None, None)
+                                                             | ((Some true | None), Some false) -> 
+                                                                 (*If Both situations are possible, take the (D > 0, d < 0) case first*)
+                                                                 (Printf.printf "default EQ\n";
+                                                                  (Some d', Some dd',(compute_ec ec_s d'(V.UnOp(V.NEG, dd')) addr)))
+                                                             | (Some false, (Some true | None)) -> 
+                                                                 (Printf.printf "inverse EQ\n";
+                                                                  (Some d', Some dd', (compute_ec ec_s (V.UnOp(V.NEG, d')) dd' addr)))
+                                                             | _ -> 
+                                                                 (** TODO: Handle integer overflow (dD and D on the same direction)*)
+                                                                 (None, None, None))))
                                      )
                                  |_ -> failwith "add_g: illegal operation\n")
                           | _ -> (None, None, None)) 
@@ -531,9 +560,11 @@ class loop_record tail header g= object(self)
                           (*if self#get_iter >= 3 then force_heur <- false*))
                           | _  -> ());
                        if !opt_trace_gt then 
-                         (let d_str = (match d_opt' with
-                                         | None -> "<None>"
-                                         | Some d -> (V.exp_to_string d)) in
+                         (let d_str = 
+                            (match d_opt' with
+                               | None -> "<None>"
+                               | Some d -> (V.exp_to_string d)) 
+                          in
                             Printf.printf "add_g: replace %s with %s at 0x%08Lx\n" d_str (V.exp_to_string e) addr)
                  )
                | None -> (
@@ -649,24 +680,25 @@ class loop_record tail header g= object(self)
         match e with
           | Some exp -> exp
           | None -> (Printf.printf "Invalid GT entry in min_ec\n"; raise LsNotReady)) in 
-      let rec loop idx l = (match l with
-                              | h::l' -> (
-                                  if idx > 0 then (
-                                    let (_, e', _, _, _, _, _, _, _) = h in
-                                    let ec' = (
-                                      match e' with
-                                        | Some exp -> exp
-                                        | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
-                                      V.BinOp(V.BITAND, V.BinOp(V.SLT, ec, ec'), (loop (idx-1) l')))
-                                  else if idx < 0 then (
-                                    let (_, e', _, ty', _, _, _, _, _) = h in
-                                    let ec' = (
-                                      match e' with
-                                        | Some exp -> exp
-                                        | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
-                                      V.BinOp(V.BITAND, V.BinOp(V.SLE, ec, ec'), (loop (idx-1) l')))
-                                  else (loop (idx-1) l'))
-                              | [] -> V.Constant(V.Int(V.REG_1, 1L))) in
+      let rec loop idx l = 
+        (match l with
+           | h::l' -> (
+               if idx > 0 then (
+                 let (_, e', _, _, _, _, _, _, _) = h in
+                 let ec' = (
+                   match e' with
+                     | Some exp -> exp
+                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
+                   V.BinOp(V.BITAND, V.BinOp(V.SLT, ec, ec'), (loop (idx-1) l')))
+               else if idx < 0 then (
+                 let (_, e', _, ty', _, _, _, _, _) = h in
+                 let ec' = (
+                   match e' with
+                     | Some exp -> exp
+                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
+                   V.BinOp(V.BITAND, V.BinOp(V.SLE, ec, ec'), (loop (idx-1) l')))
+               else (loop (idx-1) l'))
+           | [] -> V.Constant(V.Int(V.REG_1, 1L))) in
         loop i l
     ) in
       try (
@@ -946,10 +978,12 @@ class dynamic_cfg (eip : int64) = object(self)
          g#add_edge current_node eip;
          match (self#enter_loop current_node eip) with
            | (true, false, loop) -> (
+               (* Enter the same loop*)
                match loop with
                  | Some l -> (l#inc_iter; EnterLoop)
                  | None -> ErrLoop)
            | (true, true, loop) -> (
+               (* Enter a different loop *)
                if !opt_trace_loop then Printf.printf "enter loop {0x%08Lx ...} via (0x%08Lx -> 0x%08Lx)\n" eip current_node eip;
                Stack.push eip loop_stack;
                match loop with
@@ -962,29 +996,29 @@ class dynamic_cfg (eip : int64) = object(self)
            | (_, in_loop, _) -> 
                (let (loop, exit) = self#exit_loop eip in
                   if exit then (
+                    (* Exit loop *)
                     (match loop with
                        | Some l -> (
                            if !opt_trace_loop then Printf.printf "End on %d-th iter\n" (l#get_iter);
                            if (match l#check_use_loopsum with
                                  | (Some false | None) -> true
                                  | Some true ->  false) 
-                                & (self#get_iter > 2) 
-                                                   & (not l#check_done_loopsum) then (
-                                                     l#compute_ls_set current_node apply;
-                                                     if !opt_trace_ivt then(
-                                                       let ivt = l#get_ivt in
-                                                       let ivt_len = List.length ivt in
-                                                         if ivt_len > 0 then (
-                                                           Printf.printf "\n";
-                                                           Printf.printf "*************************************** IVT size: %d  ***************************************************************************\n" (ivt_len);
-                                                           l#print_ivt;
-                                                           Printf.printf "\n"));
-                                                     if !opt_trace_gt then(
-                                                       let gt = l#get_gt in
-                                                       let gt_len = List.length gt in
-                                                                  (*if gt_len > 0 then*) (
-                                                                    Printf.printf "*************************************** GT size: %d  ****************************************************************************\n" gt_len;
-                                                                    l#print_ec)));
+                           && (self#get_iter > 2) && (not l#check_done_loopsum) then (                             
+                             l#compute_ls_set current_node apply;
+                             if !opt_trace_ivt then(
+                               let ivt = l#get_ivt in
+                               let ivt_len = List.length ivt in
+                                 if ivt_len > 0 then (
+                                   Printf.printf "\n";
+                                   Printf.printf "******************** IVT size: %d  *******************************\n" (ivt_len);
+                                   l#print_ivt;
+                                   Printf.printf "\n"));
+                             if !opt_trace_gt then(
+                               let gt = l#get_gt in
+                               let gt_len = List.length gt in
+                                 (*if gt_len > 0 then*) (
+                                   Printf.printf "********************* GT size: %d  **************\n" gt_len;
+                                   l#print_ec)));
                            (*l#set_use_loopsum None;*)
                            l#reset;)
                        | None -> (Printf.printf "Warning: No loop rec while exiting a loop"));		
