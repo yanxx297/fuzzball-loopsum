@@ -348,13 +348,14 @@ class binary_decision_tree = object(self)
   method private viz_bt = 
     let fd = open_out "/tmp/bdt_graph" in
     let rec viz_node n =  
-      let n_id = n.ident in
-        Printf.fprintf fd "%d;\n" n_id;
+      let id = n.ident in
+      let eip = Int64.shift_right_logical n.eip_loc 16 in
+        Printf.fprintf fd "%d [label=\"%d:0x%Lx\"];\n" id id eip;
         (match get_f_child n with 
-           | Some(Some f) -> (Printf.fprintf fd "%d -> %d;\n" n_id f.ident ;viz_node f)
+           | Some(Some f) -> (Printf.fprintf fd "%d -> %d;\n" id f.ident ;viz_node f)
            | _ -> ());
         (match get_t_child n with 
-           | Some(Some t) -> (Printf.fprintf fd "%d -> %d;\n" n_id t.ident ;viz_node t)
+           | Some(Some t) -> (Printf.fprintf fd "%d -> %d;\n" id t.ident ;viz_node t)
            | _ -> ());
     in
       Printf.fprintf fd "digraph G {\n";
