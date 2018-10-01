@@ -192,9 +192,10 @@ class loop_record tail head g= object(self)
     use_loopsum)
 
   method set_use_loopsum opt = (
-    Printf.printf "set use_loopsum to %s\n" (match opt with
-                                               | Some b -> Printf.sprintf "%B" b
-                                               | None -> "None");
+    Printf.printf "set use_loopsum to %s\n" 
+      (match opt with
+         | Some b -> Printf.sprintf "%B" b
+         | None -> "None");
     use_loopsum <- opt)
 
   method update_loopsum = (
@@ -230,7 +231,7 @@ class loop_record tail head g= object(self)
   method inc_iter = 
     iter <- (iter + 1);
     if !opt_trace_loop then (
-      Printf.printf "*******************************************************************************************************************************\n";
+      Printf.printf "***************************************************************************************************\n";
       Printf.printf "iter [+1] : %d\n" iter)
 
   method get_iter = iter
@@ -350,7 +351,7 @@ class loop_record tail head g= object(self)
       List.iter loop gt;
       !res
 
-  (* Add or update a gate table entry*)
+  (* Add or update a guard table entry*)
   method add_g (addr: int64) lhs rhs op' ty s_func check (eeip: int64) =
     Printf.printf "add_g: iter %d, op = %s\n" iter (V.binop_to_string op');
     let check_cond cond = (
@@ -656,7 +657,9 @@ class loop_record tail head g= object(self)
     if !opt_trace_gt then Printf.printf "clean GT of 0x%08Lx\n" id;
     gt <- [] 
 
-  (**Branch table: (branch_eip(int64), cond(exp), current_decision(int64))*)
+  (* Branch table: (branch_eip(int64), cond(exp), current_decision(int64))
+   collect branch conditions in loop and use them to 
+   compute pre conditions.*)
   val mutable bt = Hashtbl.create 10		
 
   method add_bd (eip:int64) (e: V.exp) (d:int64) = (
@@ -865,6 +868,7 @@ class dynamic_cfg (eip : int64) = object(self)
         | Some l -> l#get_lss 
 
   method renew_ivt s_func check = 
+
     let loop = self#get_current_loop in
       match loop with
         | None -> (None)

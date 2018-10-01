@@ -1379,23 +1379,12 @@ struct
 	      -> (v1, (conc ty2 v2))
 	  | _ -> (v1, v2)
 
+    (* A wrapper around spfm#run() to loop for valid loopsum and apply it to 
+     inductive variables. *)
     method run () = 
-      (*let store_exp addr e ty = (
-       Printf.printf "store_exp: mem[0x%08Lx] <- %s\n" addr (V.exp_to_string e);
-       let e' = D.from_symbolic e in
-       match ty with
-       | V.REG_8 -> self#store_byte addr e'
-       | V.REG_16 -> self#store_short addr e'
-       | V.REG_32 -> self#store_word addr e'
-       | V.REG_64 -> self#store_long addr e'
-       | _ -> ()) in*)
-      let eip = 
-        (try self#get_eip with 
-           | NotConcrete(_) -> 0L) in
       let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
       let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func = (
         dt#start_new_query;
-        Printf.printf "Set eip_loc to 0x%Lx\n" (self#eip_ident ident);
         let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func (self#eip_ident ident)
         in          
           dt#count_query;

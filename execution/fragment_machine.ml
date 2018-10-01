@@ -552,9 +552,9 @@ class virtual fragment_machine = object
   method virtual add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> int64 -> unit
   method virtual clean_gt : unit
   method virtual is_gt_cond : Vine.exp -> bool
-	method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
-	method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
-	method virtual check_loopsum : int64 ->
+  method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
+  method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+  method virtual check_loopsum : int64 ->
          (Vine.exp -> bool option) ->
          (Vine.typ -> Vine.exp -> Vine.exp) ->
          ((bool -> Vine.exp) ->
@@ -2957,7 +2957,7 @@ struct
 	loop sl
 
     method run () =
-			self#run_sl is_true insns
+      self#run_sl is_true insns
 
     method run_to_jump () =
       let check_for_pc lab = (String.sub lab 0 3) <> "pc_" in
