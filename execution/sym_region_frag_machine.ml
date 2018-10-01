@@ -1405,29 +1405,64 @@ struct
         dt#start_new_query;
         let (res, _) = spfm#query_with_pc_choice cond true ident (fun() -> true) in
           dt#count_query;
-          Some res) in	
-      let (vt, eeip) = self#check_loopsum eip check_func self#simplify_exp try_ext in
-        (match vt with
-           | [] -> 
-               spfm#run()
-           | _ -> (
-               let rec loop l = (
-                 match l with
-                   | h::l' -> ( 
-                       let (addr, exp) = h in
-                       let ty = Vine_typecheck.infer_type_fast exp in 
-                       let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
-                         self#store_exp addr exp' ty;
-                         loop l'
-                     )
-                   | [] -> ()
-               ) in
-                 loop vt;
-                 let lab = Printf.sprintf "pc_0x%Lx" eeip in
-                   self#set_eip eeip;
-                   lab
-             )
-        )			
+          Some res)
+      in
+      let get_eip stmt =
+        let rec loop l = (
+          match l with
+            | st::l' -> (
+                match st with
+                  | V.Label(s) -> V.label_to_addr s
+                  | _ -> loop l'
+              )
+            | [] -> 0L
+        )
+        in
+          loop stmt
+      in
+      let is_cjmp stmt = 
+        let rec loop l = (
+          match l with
+            | st::l' -> (
+                match st with
+                  | V.CJmp(_, _, _) -> true
+                  | _ -> loop l'
+              )
+            | [] -> false
+        )
+        in
+          loop stmt
+      in
+      let stmt = spfm#get_stmt in
+        if is_cjmp stmt then (
+          let eip = get_eip stmt in
+            Printf.printf "check_loopsum at 0x%Lx\n" eip;
+            let (vt, eeip) = self#check_loopsum eip check_func self#simplify_exp try_ext in
+              (match vt with
+                 | [] -> 
+                     spfm#run()
+                 | _ -> (
+                     (* Apply loop summarization to IVs in IVT*)
+                     let rec loop l = (
+                       match l with
+                         | h::l' -> ( 
+                             let (addr, exp) = h in
+                             let ty = Vine_typecheck.infer_type_fast exp in 
+                             let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                               self#store_exp addr exp' ty;
+                               loop l'
+                           )
+                         | [] -> ()
+                     ) in
+                       loop vt;
+                       let lab = Printf.sprintf "pc_0x%Lx" eeip in
+                         self#set_eip eeip;
+                         Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip; 
+                         lab
+                   )
+              ))
+        else
+          spfm#run()
 
     val mutable extra_store_hooks = []
     val mutable last_set_null = Hashtbl.create 100

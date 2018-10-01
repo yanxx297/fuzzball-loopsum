@@ -670,7 +670,7 @@ class loop_record tail head g= object(self)
   method clean_bt = (
     bt <- Hashtbl.create 10)
 
-  method get_header = id
+  method get_head = id
 
   method add_insn (eip:int64) = 
     Hashtbl.add loop_body eip ()
@@ -1089,15 +1089,27 @@ class dynamic_cfg (eip : int64) = object(self)
       Printf.eprintf "Fail to create new branch for loopsum";
       b
     ) in
-    let func() = (
-      match (Hashtbl.mem looplist eip, self#get_iter) with
+    let do_check() = (
+      let is_in_loop eip = (
+        let looprec = ref None in
+        let func h l = (
+          if (l#in_loop eip) && !looprec = None then
+            looprec := Some l
+        )
+        in
+          Hashtbl.iter func looplist;
+          (match !looprec with      
+             | Some l -> true
+             | _ -> false)
+      )
+      in
+      match (is_in_loop eip, self#get_iter) with
         | (true, 2) -> (
             (match curr_loop with
                | Some lp -> (
                    if lp#check_use_loopsum = None || not (lp#check_done_loopsum = true) then
                      raise (EmptyLss (None)))
                | None -> raise (EmptyLss (None)));
-            Printf.printf "check_LS eip: 0x%08Lx\n" eip;
             let rec choose_guard l = (
               match l with
                 | h::l' -> (
@@ -1138,27 +1150,9 @@ class dynamic_cfg (eip : int64) = object(self)
               if List.length l = 0 then (Printf.printf "LS set is empty\n"; raise (EmptyLss (None))) 
               else loop l
           )
-        | _ -> ([], 0L)(*raise (EmptyLss true)*)) in
-      (match curr_loop with
-        | Some l -> (
-            let use_loopsum = (
-              match l#check_use_loopsum with
-                | Some true -> "Some true"
-                | Some false -> "some false"
-                | None -> "None" )
-            in 
-            let done_loopsum = 
-              (match l#check_done_loopsum with
-                 | true -> "true"
-                 | false -> "false")
-            in              
-              Printf.printf "use loopsum: %s\n" use_loopsum;
-              Printf.printf "done loopsum: %s\n" done_loopsum;
-
-          )
-        | None -> ());
+        | _ -> ([], 0L)) in
       let res = (
-        try func () with
+        try do_check () with
           | EmptyLss(r) -> (
               (match r with
                  | (None | Some false) -> (				

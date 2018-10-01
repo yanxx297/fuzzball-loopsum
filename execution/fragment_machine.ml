@@ -539,11 +539,12 @@ class virtual fragment_machine = object
   method virtual before_first_branch : bool
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
+  method virtual get_stmt : V.stmt list 
   method virtual set_text_range : int64 -> int64 -> unit
   method virtual loop_heur : int64 -> int64 -> bool * int64
-	method virtual branch_heur : int64 -> int64 -> int64 option
-	method virtual in_loop : int64 -> bool
-  method virtual get_loop_header : int64
+  method virtual branch_heur : int64 -> int64 -> int64 option
+  method virtual in_loop : int64 -> bool
+  method virtual get_loop_head : int64
   method virtual add_iv : int64 -> Vine.exp -> unit
   method virtual clean_ivt : unit
   method virtual renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> bool option
@@ -2087,6 +2088,8 @@ struct
     method get_start_eip = start_eip
     method set_start_eip new_eip = 
 	start_eip <- new_eip
+
+    method get_stmt = insns
 
     val mutable snap_insn_count = 0L
 
