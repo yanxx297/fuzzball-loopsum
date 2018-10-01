@@ -2143,26 +2143,28 @@ struct
 
     method reset () =
       let reset h = h#reset in
-      List.iter (fun (m, _, _) -> m#reset ()) proc_list;
-      (* XXX need to restore the other reg_stores in proc_list too *)
-      (match snap with (r, t) ->
-	 move_hash r reg_store;
-	 move_hash t temps);
-      insn_count <- snap_insn_count;
-      fuzz_finish_reasons <- [];
-      disqualified <- false;
-      current_dcfg <- dcfg_snap;
-	(match current_dcfg with
-	| Some dcfg -> (dcfg#reset_snap)
-	| None -> ());
-      call_stack <- call_stack_snap;
-	List.iter (fun (esp, last_eip, eip, ret_addr) -> Printf.printf "(0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)\n" esp last_eip eip ret_addr) call_stack;
-	(*match (current_dcfg, dcfg_snap) with
-	| (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
-	| _ -> (Printf.printf "reset: /_>");*)
-      Hashtbl.clear event_details;
-      event_history <- [];
-      List.iter reset !special_handler_list_ref
+        List.iter (fun (m, _, _) -> m#reset ()) proc_list;
+        (* XXX need to restore the other reg_stores in proc_list too *)
+        (match snap with (r, t) ->
+          move_hash r reg_store;
+          move_hash t temps);
+        insn_count <- snap_insn_count;
+        fuzz_finish_reasons <- [];
+        disqualified <- false;
+        current_dcfg <- snap_dcfg;
+        List.iter 
+          (fun (esp, last_eip, eip, ret_addr) -> 
+             Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
+        call_stack <- snap_call_stack;
+        List.iter 
+          (fun (esp, last_eip, eip, ret_addr) -> 
+             Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
+        (*match (current_dcfg, snap_dcfg) with
+         | (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
+         | _ -> (Printf.printf "reset: /_>");*)
+        Hashtbl.clear event_details;
+        event_history <- [];
+        List.iter reset !special_handler_list_ref
 
     method add_special_handler (h:special_handler) =
       special_handler_list_ref := h :: !special_handler_list_ref

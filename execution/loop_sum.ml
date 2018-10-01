@@ -678,44 +678,49 @@ class loop_record tail head g= object(self)
   (*Compute loop sum set: (precond, postcond set, exit_eip) List*)
   method compute_ls_set eip apply =
     done_loopsum <- true;
-    let compute_enter_cond tbl list = (
+    (* enter cond = guard cond && branch cond *)
+    let compute_enter_cond bt gt = (
       let rec guard_cond l = (
         match l with
           | h::l' -> (
               let (addr, ec, op, ty, d0_opt, d_opt, d_opt', dd_opt, eeip) = h in
-              let cond = (match (d0_opt, dd_opt) with
-                            | (Some d0, Some dd) -> 
-                                (match op with
-                                   | V.EQ -> (V.BinOp(V.BITAND, 
-                                                      V.BinOp(V.NEQ, d0, V.Constant(V.Int(ty, 0L))), 
-                                                      V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | V.NEQ -> (V.BinOp(V.BITAND, 
-                                                       V.BinOp(V.EQ, d0, V.Constant(V.Int(ty, 0L))), 
-                                                       V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | V.SLT -> (V.BinOp(V.BITAND, 
-                                                       V.BinOp(V.SLE, V.Constant(V.Int(ty, 0L)), d0), 
-                                                       V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | V.SLE -> (V.BinOp(V.BITAND, 
-                                                       V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d0), 
-                                                       V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | V.LT -> (V.BinOp(V.BITAND, 
-                                                      V.BinOp(V.LE, V.Constant(V.Int(ty, 0L)), d0), 
-                                                      V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | V.LE -> (V.BinOp(V.BITAND, 
-                                                      V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d0), 
-                                                      V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                                   | _ -> failwith "Invalid operator in compute_enter_cond")
-                            | (Some d0, None) -> (Printf.printf "lack dD\n"; raise LsNotReady) 
-                            | (None, Some dd) -> (Printf.printf "lack D0\n"; raise LsNotReady)
-                            | _ -> (Printf.printf "Invalid GT entry in compute_enter_cond\n"; raise LsNotReady)) in
+              let cond = 
+                (match (d0_opt, dd_opt) with
+                   | (Some d0, Some dd) -> 
+                       (match op with
+                          | V.EQ -> (V.BinOp(V.BITAND, 
+                                             V.BinOp(V.NEQ, d0, V.Constant(V.Int(ty, 0L))), 
+                                             V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | V.NEQ -> (V.BinOp(V.BITAND, 
+                                              V.BinOp(V.EQ, d0, V.Constant(V.Int(ty, 0L))), 
+                                              V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | V.SLT -> (V.BinOp(V.BITAND, 
+                                              V.BinOp(V.SLE, V.Constant(V.Int(ty, 0L)), d0), 
+                                              V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | V.SLE -> (V.BinOp(V.BITAND, 
+                                              V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d0), 
+                                              V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | V.LT -> (V.BinOp(V.BITAND, 
+                                             V.BinOp(V.LE, V.Constant(V.Int(ty, 0L)), d0), 
+                                             V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | V.LE -> (V.BinOp(V.BITAND, 
+                                             V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d0), 
+                                             V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
+                          | _ -> failwith "Invalid operator in compute_enter_cond")
+                   | (Some d0, None) -> (Printf.printf "lack dD\n"; raise LsNotReady) 
+                   | (None, Some dd) -> (Printf.printf "lack D0\n"; raise LsNotReady)
+                   | _ -> (Printf.printf "Invalid GT entry in compute_enter_cond\n"; raise LsNotReady)) in
                 V.BinOp(V.BITAND, cond, (guard_cond l')))
           | [] -> V.Constant(V.Int(V.REG_1, 1L))
-      ) in
+      ) 
+      in
       let branch_cond = ref (V.Constant(V.Int(V.REG_1, 1L))) in
       let compute_branch_cond addr (cond, d) = (
-        branch_cond := V.BinOp(V.BITAND, !branch_cond, cond)) in
-        Hashtbl.iter compute_branch_cond tbl;
-        V.BinOp(V.BITAND, (guard_cond list), !branch_cond)) in
+        branch_cond := V.BinOp(V.BITAND, !branch_cond, cond)) 
+      in
+        Hashtbl.iter compute_branch_cond bt;
+        V.BinOp(V.BITAND, (guard_cond gt), !branch_cond)) 
+    in
     let min_ec i l = (
       Printf.printf "min_ec: %d\n" i;
       let (_, e, _, ty, _, _, _, _, _) = List.nth l i in
@@ -779,9 +784,9 @@ class loop_record tail head g= object(self)
             Printf.printf "Not ready to compute LS\n";)
 
   val mutable i = 0	
-  method private compute_loop_body tail header g = 
+  method private compute_loop_body tail head g = 
     let rec inc_loopbody eip = 
-      if eip = header then () 
+      if eip = head then () 
       else if Hashtbl.mem loop_body eip then ()
       else (
         self#add_insn eip;
