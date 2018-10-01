@@ -958,23 +958,27 @@ struct
 	 print_string "\n"; *)
 
 	(*add eip into dcfg*)
-	match current_dcfg with
-	| None -> ()
-	| Some dcfg -> if eip >= text_start && eip <= text_end then ( 
-			let apply l = (
-				match l with
-				| h::l' -> (
-					let (addr, exp) = h in 
-					if !opt_trace_postcond then Printf.printf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
-					let ty = Vine_typecheck.infer_type_fast exp in 
-					let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
-					self#store_exp addr exp' ty)
-				|[] -> ()) in
-				match dcfg#add_node eip apply with
-			| ExitLoop -> (				
-				if !opt_trace_postcond then Printf.printf "*************************************** Post-cond *************************************** \n";
-				)
-			|_ -> ());
+       if self#started_symbolic then
+         (match current_dcfg with
+            | None -> ()
+            | Some dcfg -> 
+                if eip >= text_start && eip <= text_end then ( 
+                  let apply l = (
+                    match l with
+                      | h::l' -> (
+                          let (addr, exp) = h in 
+                            if !opt_trace_postcond then Printf.printf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
+                            let ty = Vine_typecheck.infer_type_fast exp in 
+                            let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                              self#store_exp addr exp' ty)
+                      |[] -> ()) 
+                  in
+                    match dcfg#add_node eip apply with
+                      | ExitLoop -> (				
+                          if !opt_trace_postcond then 
+                            Printf.printf "*************************************** Post-cond *************************************** \n";
+                        )
+                      |_ -> ()));
       List.iter apply_eip_hook extra_eip_hooks;
       self#watchpoint;
       self#event_to_history eip;
