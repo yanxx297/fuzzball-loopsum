@@ -21,8 +21,9 @@ open Exec_options;;
 open Frag_simplify;;
 open Exec_exceptions;;
 
+(* Possible relationships between 2 loops*)
+(* Required by method cmp_loop *)
 type loop_relation = Same | Parent | Child | Unknown
-type ls_ent = V.exp * (int64 * V.exp) list * int64
 
 let simplify_cond simplify exp = 
   let rec is_flag e = 
@@ -55,35 +56,41 @@ let check_cond check_func s_func cond =
         );
       res
 
+let print_set set = 
+  Printf.printf "Set = {";
+  DS.iter (fun d -> Printf.printf "0x%08Lx, " d) set;
+  Printf.printf "}\n";
+
 class simple_node id = object(self)
   val mutable domin = DS.singleton id
 
   method add_domin dom = domin <- (DS.add dom domin)
+
   method get_domin = domin 
-  method set_domin new_domin = domin <- new_domin
+
+  method set_domin domin' = domin <- domin'
+
   method update_domin update = domin <- DS.union domin update
+
 end
 
 (*A graph class contains some basic operations and automatic dominator computation*)
-class simple_graph = object(self)
-  val node_list = Hashtbl.create 100
+class simple_graph (h: int64) = object(self)
+  val head = h
+  val mutable nodes = Hashtbl.create 100
   val successor = Hashtbl.create 100
   val predecessor = Hashtbl.create 100
 
   val mutable domin = DS.empty
   val mutable full_dom = DS.empty
 
-  method private print_set set = 
-    Printf.printf "Set = {";
-    DS.iter (fun d -> Printf.printf "0x%08Lx, " d) set;
-    Printf.printf "}\n";
 
   method private dom_size dom = 
     let s = DS.cardinal dom in
       (*Printf.printf "dom size: %d\n" s;*)
       s
 
-  method private eip_to_node eip = try Hashtbl.find node_list eip with Not_found -> None
+  method private eip_to_node eip = try Hashtbl.find nodes eip with Not_found -> None
 
   method private eip_to_set eip = 
     let node = self#eip_to_node eip in
@@ -101,21 +108,28 @@ class simple_graph = object(self)
       List.iter (fun pid -> domin <- inter_set pid domin) pred_id_list;
       domin <- DS.add id domin; 
       let node = self#eip_to_node id in
-        match node with 
+        (match node with 
           | Some n -> n#update_domin domin
-          | None -> ();
-                    domin <- DS.empty
+          | None -> ());
+        domin <- DS.empty
 
   method add_node id = 
     let node = new simple_node id in
-      Hashtbl.replace node_list id (Some node);
+      Hashtbl.replace nodes id (Some node);
       full_dom <- DS.add id full_dom;
+      Printf.printf "Add 0x%Lx to graph 0x%Lx\n" id head
 
-  method add_edge tail header =
-    if not (Hashtbl.mem node_list tail) then self#add_node tail;
-    Hashtbl.add successor tail header;
-    Hashtbl.add predecessor header tail;
-    if not (Hashtbl.mem node_list header) then (self#add_node header;self#dom_comp header)
+  method add_edge tail head =
+    if not (Hashtbl.mem nodes tail) then 
+      self#add_node tail;
+    Hashtbl.add successor tail head;
+    Hashtbl.add predecessor head tail;
+    if not (Hashtbl.mem nodes head) then 
+      (self#add_node head;
+       self#dom_comp head)
+    else
+      self#dom_comp head
+(*       Printf.printf "Node 0x%Lx already in list, don't compute dom\n" head *)
 
   method pred n = 
     Hashtbl.find_all predecessor n
@@ -125,14 +139,43 @@ class simple_graph = object(self)
     let dom = self#eip_to_set x in
     let res = DS.mem d dom in
       if res = true then 
-        ((*Printf.printf "0x%08Lx -> 0x%08Lx " x d;
-          self#print_set dom*));
+        (Printf.printf "0x%08Lx -> 0x%08Lx " x d;
+         print_set dom);
+(*
+      (match res with
+        | true -> Printf.printf "0x%Lx dominates 0x%Lx[%d]\n" d x (DS.cardinal dom)
+        | false -> Printf.printf "0x%Lx doesn't dominate 0x%Lx[%d]\n" d x (DS.cardinal dom));
+ *)
       res
+
+  method reset =
+    Printf.printf "Reset graph\n";
+    domin <- DS.empty;
+    full_dom <- DS.empty;
+    let reset_node e n = 
+      match n with
+        | Some node -> node#set_domin DS.empty
+        | None -> ()
+    in
+      Hashtbl.iter reset_node nodes;
+
+  (* Define an empty make_snap for graph in case we need to make real snap in 
+   the future *)
+  method make_snap = ()
+
+  method reset_snap =
+    let reset_node e n = 
+      match n with
+        | Some node -> node#set_domin DS.empty
+        | None -> ()
+    in
+      Hashtbl.iter reset_node nodes;
+
 end
 
-class loop_record tail header g= object(self)
+class loop_record tail head g= object(self)
   val mutable iter = 1
-  val id = header
+  val id = head
   val loop_body = Hashtbl.create 100
   val mutable force_heur = true
 
@@ -753,35 +796,39 @@ class loop_record tail header g= object(self)
     in
       inc_loopbody tail;
       self#add_insn tail;
-      self#add_insn header;
-      let show_loop eip () = 
+      self#add_insn head;
+      let print_insn eip () = 
         Printf.printf " 0x%08Lx\n" eip
       in
-        Hashtbl.iter show_loop loop_body;
-        Printf.printf "loopbody (0x%08Lx -> 0x%08Lx) size: %d\n" tail header (Hashtbl.length loop_body) 
+        Hashtbl.iter print_insn loop_body;
+        Printf.printf "loopbody (0x%08Lx -> 0x%08Lx) size: %d\n" tail head (Hashtbl.length loop_body) 
 
 
   initializer 
-    self#compute_loop_body tail header g;
-(*Printf.printf "Create a loopRec\n"*)
+    self#compute_loop_body tail head g;
+(*         Printf.printf "Create a loopRec\n" *)
 
 end
 
 (*Manage a simpe_graph and the corresponding loop stack*)
 (*Automatic loop detection*)
 class dynamic_cfg (eip : int64) = object(self)
-  val g = new simple_graph
+  val g = new simple_graph eip
   val mutable current_node = -1L
   val mutable current_node_snap = -1L
-  val header = eip
+  val head = eip
 
-  method get_header = header
+  method get_head = head
 
+  (* To handle nested loops, track the current loop with a stack *)
+  (* Each element is the id of a loop *)
+  val mutable loopstack = Stack.create ()
+  val mutable loopstack_snap = Stack.create () 
 
-  val mutable loop_stack = Stack.create ()	(*a stack of loop header id*)	
-  val mutable loop_stack_snap = Stack.create () 
-  val mutable looplist = Hashtbl.create 10	(*loop header -> loop record*)
-
+  (* A full List of loops in current subroutine*)
+  (* Hashtbl loop head -> loop record *)
+  val mutable looplist = Hashtbl.create 10	
+                         
   method get_heur = 
     let loop = self#get_current_loop in
       match loop with
@@ -794,11 +841,11 @@ class dynamic_cfg (eip : int64) = object(self)
                   else l#get_heur)
               | _ -> l#get_heur)
 
-  method get_loop_header = 
+  method get_loop_head = 
     let loop = self#get_current_loop in
       match loop with
         | None -> -1L
-        | Some l -> l#get_header
+        | Some l -> l#get_head
 
   method get_iter = 
     let loop = self#get_current_loop in
@@ -867,13 +914,13 @@ class dynamic_cfg (eip : int64) = object(self)
         | Some l  -> l#add_bd eip exp d)
 
   method private is_parent lp lc = 
-    let header = lc#get_header in
-      Printf.printf "header: 0x%08Lx\n" header;
-      if (lp#in_loop header) then true else false
+    let head = lc#get_head in
+      Printf.printf "head: 0x%08Lx\n" head;
+      if (lp#in_loop head) then true else false
 
   method private cmp_loop (l1: loop_record) (l2: loop_record) = 
-    let h1 = l1#get_header in
-    let h2 = l2#get_header in
+    let h1 = l1#get_head in
+    let h2 = l2#get_head in
       match ((l2#in_loop h1), (l1#in_loop h2)) with
         | (true, true) -> Same
         | (true, false) -> Child
@@ -881,9 +928,9 @@ class dynamic_cfg (eip : int64) = object(self)
         | _ -> Unknown
 
   method get_current_loop =
-    if Stack.is_empty loop_stack then None 
+    if Stack.is_empty loopstack then None 
     else (		
-      let current_loop = Stack.top loop_stack in
+      let current_loop = Stack.top loopstack in
       let loop = Hashtbl.find looplist current_loop in Some loop 
     )
 
@@ -903,34 +950,20 @@ class dynamic_cfg (eip : int64) = object(self)
   )
 
   (* Return bool * bool: whether enter a loop * whether enter a different loop*)	
-  method private enter_loop tail header = 
+  method private enter_loop tail head = 
     let is_backedge t h = g#is_dom t h in 
-    let current_header = (match (self#get_current_loop) with
+    let current_head = (match (self#get_current_loop) with
                             | None -> -1L
-                            | Some loop -> loop#get_header)
+                            | Some loop -> loop#get_head)
     in
-      (*Printf.printf "enter_loop: 0x%08Lx, 0x%08Lx\n" header current_header;*)
-      if current_header = header then (
-        Printf.eprintf "enter_loop: current_header = header\n";
+      (*Printf.printf "enter_loop: 0x%08Lx, 0x%08Lx\n" head current_head;*)
+      if current_head = head then (
+        Printf.eprintf "enter_loop: current_head = head\n";
         let l = self#get_current_loop in
-          (*let l' = (
-           match l with
-           | Some loop -> (
-           match loop#check_use_loopsum with
-           | (None | Some true) -> (l)
-           | Some false -> (
-           let add = (
-           match (is_backedge tail header) with
-           | true -> Some (new loop_record tail header g)
-           | false -> None) in
-           match add with 
-           | Some a -> (Some (self#update_loop loop a))
-           | None -> l))
-           | None -> l) in*)
           (true, false, l))
-      else if is_backedge tail header then (
-        Printf.eprintf "enter_loop: Find backedge\n";
-        let loop = new loop_record tail header g in
+      else if is_backedge tail head then (
+        Printf.eprintf "enter_loop: Find backedge 0x%Lx --> 0x%Lx\n" tail head;
+        let loop = new loop_record tail head g in
         let dup = ref None in
         let check_dup eip lc = (
           match ((self#is_parent lc loop), (self#is_parent loop lc)) with
@@ -954,9 +987,9 @@ class dynamic_cfg (eip : int64) = object(self)
             | None -> (true, true, Some loop)
             | Some l -> (true, true, !dup)
       )
-      else if Hashtbl.mem looplist header then 
-        (Printf.printf "enter_loop: find loop in looplist: 0x%08Lx\n" header;
-         (true, true, Some (Hashtbl.find looplist header)))
+      else if Hashtbl.mem looplist head then 
+        (Printf.printf "enter_loop: find loop in looplist: 0x%08Lx\n" head;
+         (true, true, Some (Hashtbl.find looplist head)))
       else (false, false, None)
 
   method private exit_loop eip = 
@@ -985,7 +1018,7 @@ class dynamic_cfg (eip : int64) = object(self)
            | (true, true, loop) -> (
                (* Enter a different loop *)
                if !opt_trace_loop then Printf.printf "enter loop {0x%08Lx ...} via (0x%08Lx -> 0x%08Lx)\n" eip current_node eip;
-               Stack.push eip loop_stack;
+               Stack.push eip loopstack;
                match loop with
                  | Some lp -> (
                      if not (Hashtbl.mem looplist eip) then Hashtbl.add looplist eip lp; 
@@ -1022,7 +1055,7 @@ class dynamic_cfg (eip : int64) = object(self)
                            (*l#set_use_loopsum None;*)
                            l#reset;)
                        | None -> (Printf.printf "Warning: No loop rec while exiting a loop"));		
-                    ignore(try Stack.pop loop_stack with Stack.Empty -> 0L); 
+                    ignore(try Stack.pop loopstack with Stack.Empty -> 0L); 
                     ExitLoop
                   )
                   else 
@@ -1039,11 +1072,12 @@ class dynamic_cfg (eip : int64) = object(self)
 
 
   method private count_loop = 
-    let count = Stack.length loop_stack in
-      Printf.printf "Current dcfg (0x%08Lx) have %d loops in active\n" header count 
+    let count = Stack.length loopstack in
+      Printf.printf "Current dcfg (0x%08Lx) have %d loops in active\n" head count 
 
   (* Check whether any existing loop summarization that can fit current
-   condition, and apply the loopsum if find any *)
+   condition and return the symbolic values and addrs of of IVs.
+   NOTE: the update itself implemented in sym_region_frag_machine.ml*)
   method check_loopsum eip check s_func try_ext = (
     (*Printf.printf "check_loopsum\n";*)
     let curr_loop = self#get_current_loop in
@@ -1149,20 +1183,25 @@ class dynamic_cfg (eip : int64) = object(self)
 
 
   method reset = 
-    (*Printf.printf "reset dcfg. looplist len = %d\n" (Hashtbl.length looplist);*)
+(*     Printf.printf "reset dcfg. looplist len = %d\n" (Hashtbl.length looplist);   *)
+    g#reset; 
     current_node <- -1L;
 
   method make_snap =
-    (*Printf.printf "dcfg: make snap, l(loop_stack) = %d, current node = 0x%08Lx\n" (Stack.length loop_stack) current_node; *)
+(*     Printf.printf "dcfg: make snap, l(loopstack) = %d, current node = 0x%08Lx\n" (Stack.length loopstack) current_node;   *)
+    g#make_snap;
     current_node_snap <- current_node;
-    loop_stack_snap <- loop_stack
+    loopstack_snap <- Stack.copy loopstack
 
   method reset_snap =
-    (*Printf.printf "dcfg: reset snap at l(loop_stack) = %d\n" (Stack.length loop_stack);  *)
+(*     Printf.printf "dcfg: reset snap at l(loopstack) = %d\n" (Stack.length loopstack);    *)
+    g#reset_snap;
     current_node <- current_node_snap;
-    loop_stack <- loop_stack_snap;
+    loopstack <- Stack.copy loopstack_snap;
     let func hid lr = 
-      if (lr#in_loop current_node) then ((*Printf.printf "reset_snap: push loop <0x%08Lx> into stack\n" hid;*)Stack.push hid loop_stack)
+      if (lr#in_loop current_node) then 
+        ((*Printf.printf "reset_snap: push loop <0x%08Lx> into stack\n" hid;*)
+          Stack.push hid loopstack)
     in
       Hashtbl.iter func looplist  
 

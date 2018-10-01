@@ -2114,7 +2114,7 @@ struct
 
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
-	let h = self#get_loop_header in
+	let h = self#get_loop_head in
 	(*Printf.printf "jump_hook: 0x%08Lx | 0x%08Lx\n" h eip;*) 
 	if (eip = h) then
           let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in

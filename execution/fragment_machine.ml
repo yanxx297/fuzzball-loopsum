@@ -640,108 +640,111 @@ struct
     val form_man = new FormMan.formula_manager
     method get_form_man = form_man
 
-	val mutable text_start = Int64.min_int
-	val mutable text_end = Int64.max_int
-	method set_text_range s e = 
-		text_start <- s;
-		text_end <- e
-	val dcfg_map = Hashtbl.create 100	(*Dynamic CFG for each procedure, indexed by (esp, last_eip, eip, ret_addr)*)
-	val mutable current_dcfg = None	(*Point to current DCFG*)
-	
-	(**res = (is_guard?, in_loop_targ)*)
-	method loop_heur t_eip f_eip = 
-		(*Printf.printf "loop_heur: \n";*)
-		let res = match current_dcfg with
-		| None -> (false, -1L)
-		| Some dcfg -> (
-			let use_heur = dcfg#get_heur in (
-				match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
-  			| (true, false) -> (true, (if use_heur then t_eip else -1L))
-  			| (false, true) -> (true, (if use_heur then f_eip else -1L))
-  			| _ -> (false, -1L)))
-		in
-		res
-		
-	method branch_heur t_eip f_eip = (
-		let eip = self#get_eip in
-		let res = match current_dcfg with
-		| None -> (None)
-		| Some dcfg -> (
-			match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
-			| (true, true) 
-			| (true, false)
-			| (false, true) -> (
-				let d = dcfg#check_bt eip in
-				(match d with
-				| Some (_, res) -> (Some res)
-				| _ -> None))
-			| _ -> (None))
-		in
-		res)
-		
-	method in_loop eip= (
-		match current_dcfg with
-		| None -> false
-		| Some g -> g#in_loop eip)	
-		
-	method private get_iter = 
-		match current_dcfg with
-		| None -> 0
-		| Some g -> g#get_iter
+    val mutable text_start = Int64.min_int
+    val mutable text_end = Int64.max_int
+    method set_text_range s e = 
+      text_start <- s;
+      text_end <- e
 
-	method get_loop_header = 
-		match current_dcfg with
-		| None -> -1L
-		| Some g -> g#get_loop_header
+    (* Dynamic CFG for each procedure, indexed by (esp, last_eip, eip, ret_addr).
+       current_dcfg: referebce to current dynamic CFG*)
+    val dcfgs = Hashtbl.create 100
+    val mutable current_dcfg = None	
 
-	method add_iv addr exp = 
-		match current_dcfg with
-		| None -> ()
-		| Some g -> g#add_iv addr exp
+    (**res = (is_guard?, in_loop_targ)*)
+    method loop_heur t_eip f_eip = 
+      (*Printf.printf "loop_heur: \n";*)
+      let res = match current_dcfg with
+        | None -> (false, -1L)
+        | Some dcfg -> (
+            let use_heur = dcfg#get_heur in (
+              match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
+                | (true, false) -> (true, (if use_heur then t_eip else -1L))
+                | (false, true) -> (true, (if use_heur then f_eip else -1L))
+                | _ -> (false, -1L)))
+      in
+        res
 
-	method clean_ivt = 
-		match current_dcfg with
-		| None -> ()
-		| Some g -> g#clean_ivt
+    method branch_heur t_eip f_eip = (
+      let eip = self#get_eip in
+      let res = match current_dcfg with
+        | None -> (None)
+        | Some dcfg -> (
+            match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
+              | (true, true) 
+              | (true, false)
+              | (false, true) -> (
+                  let d = dcfg#check_bt eip in
+                    (match d with
+                       | Some (_, res) -> (Some res)
+                       | _ -> None))
+              | _ -> (None))
+      in
+        res)
 
-	method renew_ivt s_func check = 
-		match current_dcfg with
-		| None -> None
-		| Some g -> g#renew_ivt s_func check
-	
-	method is_iv_cond cond = 
-		match current_dcfg with
-		| None -> false
-		| Some g -> g#is_iv_cond cond
+    method in_loop eip= (
+      match current_dcfg with
+        | None -> false
+        | Some g -> g#in_loop eip)	
 
-	method add_g addr lhs rhs op' ty s_func check eeip= 
-		match current_dcfg with
-		| None -> ()
-		| Some g -> g#add_g addr lhs rhs op' ty s_func check eeip
+    method private get_iter = 
+      match current_dcfg with
+        | None -> 0
+        | Some g -> g#get_iter
 
-	method clean_gt = 
-		match current_dcfg with
-		| None -> ()
-		| Some g -> g#clean_gt
-	
-	method is_gt_cond cond = 
-		match current_dcfg with
-		| None -> false
-		| Some g -> g#is_gt_cond cond
+    method get_loop_head = 
+      match current_dcfg with
+        | None -> -1L
+        | Some g -> g#get_loop_head
 
-	method add_bd eip exp d = (
-		match current_dcfg with
-		| None -> ()
-		| Some g -> (g#add_bd eip exp d))
+    method add_iv addr exp = 
+      match current_dcfg with
+        | None -> ()
+        | Some g -> g#add_iv addr exp
 
-	method check_loopsum eip check s_func try_ext = 
-		match current_dcfg with
-		| None -> ([], 0L)
-		| Some g -> g#check_loopsum eip check s_func try_ext
+    method clean_ivt = 
+      match current_dcfg with
+        | None -> ()
+        | Some g -> g#clean_ivt
 
-	method simplify_exp typ e = e
-	
-	method print_dt = Printf.printf "fm: No DT to print\n"
+    method renew_ivt s_func check = 
+      match current_dcfg with
+        | None -> None
+        | Some g -> g#renew_ivt s_func check
+
+    method is_iv_cond cond = 
+      match current_dcfg with
+        | None -> false
+        | Some g -> g#is_iv_cond cond
+
+    method add_g addr lhs rhs op' ty s_func check eeip= 
+      match current_dcfg with
+        | None -> ()
+        | Some g -> g#add_g addr lhs rhs op' ty s_func check eeip
+
+    method clean_gt = 
+      match current_dcfg with
+        | None -> ()
+        | Some g -> g#clean_gt
+
+    method is_gt_cond cond = 
+      match current_dcfg with
+        | None -> false
+        | Some g -> g#is_gt_cond cond
+
+    method add_bd eip exp d = (
+      match current_dcfg with
+        | None -> ()
+        | Some g -> (g#add_bd eip exp d))
+
+    method check_loopsum eip check s_func try_ext = 
+      match current_dcfg with
+        | None -> ([], 0L)
+        | Some g -> g#check_loopsum eip check s_func try_ext
+
+    method simplify_exp typ e = e
+
+    method print_dt = Printf.printf "fm: No DT to print\n"
 
     val mutable reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
@@ -752,8 +755,8 @@ struct
     val mutable insns = []
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
-    val mutable dcfg_snap = None
-    val mutable call_stack_snap = []
+    val mutable snap_dcfg = None
+    val mutable snap_call_stack = []
     val mutable first_branch = true
 
     val mutable before_first_branch_flag = true
@@ -1021,11 +1024,22 @@ struct
 	    -> true
       in
       let pop_callstack esp =
+        let reset_dcfg (_, _, eip, _) = 
+          try
+            let g = Hashtbl.find dcfgs eip in
+              (match g with
+                 | Some dcfg -> dcfg#reset_snap
+                 | _ -> ())
+          with
+            | Not_found -> ()
+        in
 	while match call_stack with
 	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
-	  | _ -> false do
-	      call_stack <- List.tl call_stack
-	done
+	  | _ -> false 
+        do
+          reset_dcfg (List.hd call_stack);
+          call_stack <- List.tl call_stack
+        done
       in
       let get_retaddr esp =
 	match !opt_arch with
@@ -1065,11 +1079,10 @@ struct
 	      "not a jump"
       in
 	let switch_dcfg eip = 
-		let next_dcfg = Hashtbl.find dcfg_map eip in
+		let next_dcfg = Hashtbl.find dcfgs eip in
 		if current_dcfg != next_dcfg 
-		then (
-			(*Printf.eprintf "Switch DCFG: Now in 0x%08Lx\n" eip;*)
-			current_dcfg <- next_dcfg)
+                then (
+                  current_dcfg <- next_dcfg)
 	in
 	match kind with
 	  | "call" ->
@@ -1082,42 +1095,39 @@ struct
 		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
 		  last_eip eip ret_addr;*)
 		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
-		if not (Hashtbl.mem dcfg_map eip)
+		if not (Hashtbl.mem dcfgs eip)
 		then (
 			let dcfg = new dynamic_cfg eip in
-			Hashtbl.replace dcfg_map eip (Some dcfg);
+			Hashtbl.replace dcfgs eip (Some dcfg);
 			);
 		switch_dcfg eip;
-		(match current_dcfg with
-		| None -> ()
-		| Some g -> g#reset); 
 		(* If we had a command-line option for expensive sanity
 		   checks, we could use it here. For now, just comment it
 		   out: *)
 		if false then
 		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
 	  | "return" ->
-	      let esp = self#get_esp in
-		pop_callstack (Int64.sub esp size);
-		if false then
-		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-		(*let depth = List.length call_stack in
-		  for i = 0 to depth - 2 do Printf.eprintf " " done;
-		  Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
-		    last_eip eip;*)
-		  pop_callstack esp;
-		  if false then
-		    g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-		(*switch dcfg*)
-		if List.length call_stack != 0 then (
-			let (_, _, call_to, _) = List.hd call_stack in
-			if Hashtbl.mem dcfg_map call_to 
-			then (
-				switch_dcfg call_to;
-				(*Printf.eprintf "Now in the procedure start at 0x%08Lx\n" call_to*)
-				)
-			else failwith "attempt to access an unknown activation" 
-			);
+              let esp = self#get_esp in
+                pop_callstack (Int64.sub esp size);
+                if false then
+                  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
+                (*let depth = List.length call_stack in
+                 for i = 0 to depth - 2 do Printf.eprintf " " done;
+                 Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
+                 last_eip eip;*)
+                pop_callstack esp;
+                if false then
+                  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
+                (*switch dcfg*)
+                if List.length call_stack != 0 then (
+                  let (_, last, eip, _) = List.hd call_stack in
+                    if Hashtbl.mem dcfgs eip
+                    then (
+                      switch_dcfg eip;
+                    (*Printf.eprintf "Now in the procedure start at 0x%08Lx\n" call_to*)
+                    )
+                    else failwith "attempt to access an unknown activation" 
+                );
 	  | _ -> ()
 
     method jump_hook last_insn last_eip eip =
@@ -2088,8 +2098,8 @@ struct
       let snap_handler h = h#make_snap in
       mem#make_snap ();
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
-      dcfg_snap <- current_dcfg;
-      call_stack_snap <- call_stack;
+      snap_dcfg <- current_dcfg;
+      snap_call_stack <- call_stack;
       (match current_dcfg with
 	| None -> ()
 	| Some dcfg -> dcfg#make_snap);
