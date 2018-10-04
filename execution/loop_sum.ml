@@ -464,7 +464,8 @@ class loop_record tail head g= object(self)
                  | Some e -> (ec)
                  | None -> (ecfunc d dD)) 
         | None -> (ecfunc d dD)
-    ) in
+    ) 
+    in
       (*For each case, compute dd, check IOF according to D and dd, compute EC if not yet*)
       (*check whether dd' = dd, and then copy D' to D at the end*)
       (match exp with
@@ -482,10 +483,11 @@ class loop_record tail head g= object(self)
                                      (let dd' = s_func ty (V.BinOp(V.MINUS, d', d)) in
                                       let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
                                       and cond2 = V.BinOp(V.SLT, dd', V.Constant(V.Int(ty, 0L))) in
-                                        if !opt_trace_gt then (Printf.printf "dd = %s\n" (V.exp_to_string (V.BinOp(V.MINUS, d', d)));
-                                                               Printf.printf "dd' = %s\n" (V.exp_to_string dd');
-                                                               Printf.printf "cond1: %s\n" (V.exp_to_string cond1);
-                                                               Printf.printf "cond2: %s\n" (V.exp_to_string cond2));
+                                        if !opt_trace_gt then 
+                                          (Printf.printf "dd = %s\n" (V.exp_to_string (V.BinOp(V.MINUS, d', d)));
+                                           Printf.printf "dd' = %s\n" (V.exp_to_string dd');
+                                           Printf.printf "cond1: %s\n" (V.exp_to_string cond1);
+                                           Printf.printf "cond2: %s\n" (V.exp_to_string cond2));
                                         match ((check_cond cond1), (check_cond cond2)) with
                                           | ((None | Some true),(None | Some true)) -> 
                                               (*D>0 && d<0*)
@@ -758,11 +760,11 @@ class loop_record tail head g= object(self)
         let enter_cond = compute_enter_cond bt gt in
           Printf.printf "enter_cond: %s\n" (V.exp_to_string enter_cond);
           let loop i (addr, ec_opt, op, typ, d0_opt, d_opt, d_opt', dd_opt, eeip)= (
-            let ec = 
-              match ec_opt with
-                | Some e -> e
-                | None -> (Printf.printf "Invalid GT entry: No EC\n"; raise LsNotReady) in
             let precond = (min_ec i gt) in
+            let ec = match ec_opt with
+              | Some e -> e
+              | None -> (Printf.printf "Invalid GT entry: No EC\n"; raise LsNotReady) 
+            in
               Printf.printf "min_ec: result = %s\n" (V.exp_to_string precond);
               let rec compute_vt l = (
                 match l with
@@ -778,7 +780,8 @@ class loop_record tail head g= object(self)
               let iv_list = compute_vt ivt in
                 res := !res @ [(precond, iv_list, eeip)];
                 Printf.printf "Break1: eip = 0x%08Lx, addr = 0x%08Lx\n" eip addr;
-                if (eip = addr) then (apply iv_list)) in
+                if (eip = addr) then (apply iv_list)) 
+          in
             List.iteri loop gt;
             ls_set <- ls_set @ [(enter_cond, !res)];
             Printf.printf "LS size: %d\n" (List.length ls_set);
@@ -1112,54 +1115,56 @@ class dynamic_cfg (eip : int64) = object(self)
              | _ -> false)
       )
       in
-      match (is_in_loop eip, self#get_iter) with
-        | (true, 2) -> (
-            (match curr_loop with
-               | Some lp -> (
-                   if lp#check_use_loopsum = None || not (lp#check_done_loopsum = true) then
-                     raise (EmptyLss (None)))
-               | None -> raise (EmptyLss (None)));
-            let rec choose_guard l = (
-              match l with
-                | h::l' -> (
-                    let (pre_cond, vt, eeip) = h in 
-                      if l' = [] then (
-                        Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
-                        Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
-                        (vt, eeip))
-                      else (
-                        match (check_cond pre_cond) with
-                          | (None | Some true) -> ( 
-                              Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
-                              Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
-                              (vt, eeip))
-                          | Some false -> (
-                              choose_guard l'))
-                  )
-                | [] -> failwith "choose_guard: This path cannot exit from any guard") in		
-            let rec loop l = (
-              match l with
-                | h::l' -> (
-                    Printf.printf "Find a loop sum, \n";
-                    let (enter_cond, exit_cond) = h in
-                    let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func in
-                      if res then Printf.printf "and we decide to use it\n"
-                      else Printf.printf "but we cannot use it for some reason\n";
-                      if res then (match (check_cond enter_cond) with
-                                     | (None | Some true) -> (
-                                         Printf.printf "Enter_cond satisfiable, let's choose guard\n";
-                                         choose_guard exit_cond
-                                       )
-                                     | Some false -> (loop l'))
-                      else raise (EmptyLss (Some true))				
-                  )
-                | [] -> raise (EmptyLss (Some false))
-            ) in 
-            let l = self#get_lss in
-              if List.length l = 0 then (Printf.printf "LS set is empty\n"; raise (EmptyLss (None))) 
-              else loop l
-          )
-        | _ -> ([], 0L)) in
+        match (is_in_loop eip, self#get_iter) with
+          | (true, 2) -> (
+              (match curr_loop with
+                 | Some lp -> (
+                     if lp#check_use_loopsum = None || not (lp#check_done_loopsum = true) then
+                       raise (EmptyLss (None)))
+                 | None -> raise (EmptyLss (None)));
+              let rec choose_guard l = (
+                match l with
+                  | h::l' -> (
+                      let (pre_cond, vt, eeip) = h in 
+                        if l' = [] then (
+                          Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
+                          Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
+                          (vt, eeip))
+                        else (
+                          match (check_cond pre_cond) with
+                            | (None | Some true) -> ( 
+                                Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
+                                Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
+                                (vt, eeip))
+                            | Some false -> (
+                                choose_guard l'))
+                    )
+                  | [] -> failwith "choose_guard: This path cannot exit from any guard") in		
+              let rec loop l = (
+                match l with
+                  | h::l' -> (
+                      Printf.printf "Find a loop sum, \n";
+                      let (enter_cond, exit_cond) = h in
+                      let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func in
+                        if res then Printf.printf "and we decide to use it\n"
+                        else Printf.printf "but we cannot use it for some reason\n";
+                        if res then 
+                          (match (check_cond enter_cond) with
+                             | (None | Some true) -> (
+                                 Printf.printf "Enter_cond satisfiable, let's choose guard\n";
+                                 choose_guard exit_cond
+                               )
+                             | Some false -> (loop l'))
+                        else raise (EmptyLss (Some true))				
+                    )
+                  | [] -> raise (EmptyLss (Some false))
+              ) in 
+              let l = self#get_lss in
+                if List.length l = 0 then (Printf.printf "LS set is empty\n"; raise (EmptyLss (None))) 
+                else loop l
+            )
+          | _ -> ([], 0L)) 
+    in
       let res = (
         try do_check () with
           | EmptyLss(r) -> (
