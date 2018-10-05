@@ -21,10 +21,6 @@ open Exec_options;;
 open Frag_simplify;;
 open Exec_exceptions;;
 
-(* Possible relationships between 2 loops*)
-(* Required by method cmp_loop *)
-type loop_relation = Same | Parent | Child | Unknown
-
 let simplify_cond simplify exp = 
   let rec is_flag e = 
     (match e with
@@ -929,15 +925,6 @@ class dynamic_cfg (eip : int64) = object(self)
     let head = lc#get_head in
       Printf.printf "head: 0x%08Lx\n" head;
       if (lp#in_loop head) then true else false
-
-  method private cmp_loop (l1: loop_record) (l2: loop_record) = 
-    let h1 = l1#get_head in
-    let h2 = l2#get_head in
-      match ((l2#in_loop h1), (l1#in_loop h2)) with
-        | (true, true) -> Same
-        | (true, false) -> Child
-        | (false, true) -> Parent
-        | _ -> Unknown
 
   method get_current_loop =
     if Stack.is_empty loopstack then None 
