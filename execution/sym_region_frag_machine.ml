@@ -1444,10 +1444,7 @@ struct
                          | [] -> ()
                      ) in
                        loop vt;
-                       let lab = Printf.sprintf "pc_0x%Lx" eeip in
-                         self#set_eip eeip;
-                         Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip; 
-                         lab
+                       spfm#run()
                    )
               ))
         else
