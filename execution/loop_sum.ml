@@ -178,29 +178,25 @@ class loop_record tail head g= object(self)
   val mutable ls_set = []
   method get_lss = ls_set
 
-  (**None := no LS at all*)
-  (**Some false := there are some LSs, but non of them work for current path*)
-  (**Some true := currently use a loopsum*)
-  val mutable use_loopsum = None	
-  val mutable done_loopsum = false
-
-  method check_use_loopsum = (
-    use_loopsum)
-
-  method set_use_loopsum opt = (
+  (* Status about applying loopsum*)
+  (* None: no loopsum exist*)
+  (* Some false : there are some loopsums, but non of them work for current path*)
+  (* Some true : a loopsum has been applied*)
+  val mutable loopsum_status = None
+                              
+  method get_status = loopsum_status
+ 
+  method set_status opt = (
     Printf.printf "set use_loopsum to %s\n" 
       (match opt with
          | Some b -> Printf.sprintf "%B" b
          | None -> "None");
-    use_loopsum <- opt)
+    loopsum_status <- opt)
 
   method update_loopsum = (
-    done_loopsum <- false;
+    loopsum_status <- None
   (**If we clear up LS set after each updating, we must also remove the corresponding decision sub-tree*)
   (*ls_set <- []*))
-
-  method check_done_loopsum = (
-    done_loopsum)
 
   method get_heur = force_heur
 
@@ -678,7 +674,6 @@ class loop_record tail head g= object(self)
 
   (*Compute loop sum set: (precond, postcond set, exit_eip) List*)
   method compute_ls_set eip apply =
-    done_loopsum <- true;
     (* enter cond = guard cond && branch cond *)
     let compute_enter_cond bt gt = (
       let rec guard_cond l = (
@@ -781,7 +776,7 @@ class loop_record tail head g= object(self)
             List.iteri loop gt;
             ls_set <- ls_set @ [(enter_cond, !res)];
             Printf.printf "LS size: %d\n" (List.length ls_set);
-            use_loopsum <- Some true;) with
+            loopsum_status <- Some true;) with
         | LsNotReady -> (
             Printf.printf "Not ready to compute LS\n";)
 
@@ -841,10 +836,12 @@ class dynamic_cfg (eip : int64) = object(self)
       match loop with
         | None -> false
         | Some l -> (
-            match l#check_use_loopsum with
+            match l#get_status with
               | Some false -> (Printf.printf "Turn off loop heur: some LSs\n"; false)
               | None -> (
-                  if l#check_done_loopsum then (Printf.printf "Turn off loop heur: No LS and loopsum done\n"; false)
+                  if not (l#get_status = None) then 
+                    (Printf.printf "Turn off loop heur: No LS and loopsum done\n"; 
+                     false)
                   else l#get_heur)
               | _ -> l#get_heur)
 
@@ -1032,10 +1029,10 @@ class dynamic_cfg (eip : int64) = object(self)
                     (match loop with
                        | Some l -> (
                            if !opt_trace_loop then Printf.printf "End on %d-th iter\n" (l#get_iter);
-                           if (match l#check_use_loopsum with
+                           if (match l#get_status with
                                  | (Some false | None) -> true
                                  | Some true ->  false) 
-                           && (self#get_iter > 2) && (not l#check_done_loopsum) then (                             
+                           && (self#get_iter > 2) && (l#get_status = None) then ( 
                              l#compute_ls_set current_node apply;
                              if !opt_trace_ivt then(
                                let ivt = l#get_ivt in
@@ -1051,7 +1048,7 @@ class dynamic_cfg (eip : int64) = object(self)
                                  (*if gt_len > 0 then*) (
                                    Printf.printf "********************* GT size: %d  **************\n" gt_len;
                                    l#print_ec)));
-                           (*l#set_use_loopsum None;*)
+                           (*l#set_status None;*)
                            l#reset;)
                        | None -> (Printf.printf "Warning: No loop rec while exiting a loop"));		
                     ignore(try Stack.pop loopstack with Stack.Empty -> 0L); 
@@ -1106,7 +1103,7 @@ class dynamic_cfg (eip : int64) = object(self)
           | (true, 2) -> (
               (match curr_loop with
                  | Some lp -> (
-                     if lp#check_use_loopsum = None || not (lp#check_done_loopsum = true) then
+                     if lp#get_status = None then
                        raise (EmptyLss (None)))
                  | None -> raise (EmptyLss (None)));
               let rec choose_guard l = (
@@ -1163,7 +1160,7 @@ class dynamic_cfg (eip : int64) = object(self)
                          Printf.printf "No valid loop sum to use\n");
                      if r = Some false then (
                        match curr_loop with
-                         | Some l -> (l#set_use_loopsum (Some false))
+                         | Some l -> (l#set_status (Some false))
                          | _ -> ()))
                  | Some true -> ());
               ([], 0L))) in
@@ -1171,7 +1168,7 @@ class dynamic_cfg (eip : int64) = object(self)
          | ([], _) -> ()
          | _ -> (
              match curr_loop with
-               | Some l -> l#set_use_loopsum (Some true)
+               | Some l -> l#set_status (Some true)
                | _ -> ()));
       res
   )

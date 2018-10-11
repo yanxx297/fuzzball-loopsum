@@ -10,7 +10,6 @@ class simple_graph : int64 -> object
 end
 
 class loop_record : int64 -> int64 -> simple_graph -> object
-  val done_loopsum : bool
   method in_loop : int64 -> bool
   method get_head : int64
   method inc_iter : unit
@@ -35,9 +34,8 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method add_bd : int64 -> Vine.exp -> int64 -> unit
   method check_bt : int64 -> (Vine.exp * int64) option
   method clean_bt : unit
-  method check_use_loopsum : bool option
-  method set_use_loopsum : bool option -> unit
-  method check_done_loopsum : bool
+  method get_status : bool option
+  method set_status : bool option -> unit
   method update_loopsum : unit
 end
 
