@@ -179,9 +179,9 @@ class loop_record tail head g= object(self)
   method get_lss = ls_set
 
   (* Status about applying loopsum*)
-  (* None: no loopsum exist*)
+  (* None: haven't tried to apply loopsum *)
   (* Some false : there are some loopsums, but non of them work for current path*)
-  (* Some true : a loopsum has been applied*)
+  (* Some true : a loopsum has been applied to this loop*)
   val mutable loopsum_status = None
                               
   method get_status = loopsum_status
@@ -837,12 +837,11 @@ class dynamic_cfg (eip : int64) = object(self)
         | None -> false
         | Some l -> (
             match l#get_status with
-              | Some false -> (Printf.printf "Turn off loop heur: some LSs\n"; false)
-              | None -> (
-                  if not (l#get_status = None) then 
-                    (Printf.printf "Turn off loop heur: No LS and loopsum done\n"; 
-                     false)
-                  else l#get_heur)
+              | Some false -> false
+              | None -> 
+                  (if l#get_lss != [] then 
+                     false
+                   else l#get_heur)
               | _ -> l#get_heur)
 
   method get_loop_head = 
@@ -1029,10 +1028,8 @@ class dynamic_cfg (eip : int64) = object(self)
                     (match loop with
                        | Some l -> (
                            if !opt_trace_loop then Printf.printf "End on %d-th iter\n" (l#get_iter);
-                           if (match l#get_status with
-                                 | (Some false | None) -> true
-                                 | Some true ->  false) 
-                           && (self#get_iter > 2) && (l#get_status = None) then ( 
+                           if (l#get_status != Some true) 
+                               && (self#get_iter > 2) && (l#get_lss = []) then ( 
                              l#compute_ls_set current_node apply;
                              if !opt_trace_ivt then(
                                let ivt = l#get_ivt in
@@ -1048,7 +1045,6 @@ class dynamic_cfg (eip : int64) = object(self)
                                  (*if gt_len > 0 then*) (
                                    Printf.printf "********************* GT size: %d  **************\n" gt_len;
                                    l#print_ec)));
-                           (*l#set_status None;*)
                            l#reset;)
                        | None -> (Printf.printf "Warning: No loop rec while exiting a loop"));		
                     ignore(try Stack.pop loopstack with Stack.Empty -> 0L); 
@@ -1103,7 +1099,7 @@ class dynamic_cfg (eip : int64) = object(self)
           | (true, 2) -> (
               (match curr_loop with
                  | Some lp -> (
-                     if lp#get_status = None then
+                     if lp#get_lss = [] then
                        raise (EmptyLss (None)))
                  | None -> raise (EmptyLss (None)));
               let rec choose_guard l = (
