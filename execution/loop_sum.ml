@@ -10,12 +10,11 @@
 module DS = Set.Make (Int64);;
 module V = Vine;;
 
-exception EmptyLss of bool option
 (* Some true := find some LS whose precond is satisfiable, but we don't use them*)
 (* Some false := No satisfiable LS*)
 (* None := No LS at all*)
-
-exception LsNotReady
+exception EmptyLss of bool option
+exception LoopsumNotReady
 
 open Exec_options;;
 open Frag_simplify;;
@@ -175,8 +174,11 @@ class loop_record tail head g= object(self)
   val loop_body = Hashtbl.create 100
   val mutable force_heur = true
 
-  val mutable ls_set = []
-  method get_lss = ls_set
+  (* lss(loopsum set): (enter_cond, exit_cond) *)
+  (* enter_cond = precond && branch conditions *)
+  (* exit_cond = (precond, VT, exit_eip) *)
+  val mutable lss = []
+  method get_lss = lss
 
   (* Status about applying loopsum*)
   (* None: haven't tried to apply loopsum *)
@@ -196,7 +198,7 @@ class loop_record tail head g= object(self)
   method update_loopsum = (
     loopsum_status <- None
   (**If we clear up LS set after each updating, we must also remove the corresponding decision sub-tree*)
-  (*ls_set <- []*))
+  (*lss <- []*))
 
   method get_heur = force_heur
 
@@ -673,8 +675,7 @@ class loop_record tail head g= object(self)
     Hashtbl.add loop_body eip ()
 
   (*Compute loop sum set: (precond, postcond set, exit_eip) List*)
-  method compute_ls_set eip apply =
-    (* enter cond = guard cond && branch cond *)
+  method compute_lss eip apply =
     let compute_enter_cond bt gt = (
       let rec guard_cond l = (
         match l with
@@ -703,9 +704,9 @@ class loop_record tail head g= object(self)
                                              V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d0), 
                                              V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
                           | _ -> failwith "Invalid operator in compute_enter_cond")
-                   | (Some d0, None) -> (Printf.printf "lack dD\n"; raise LsNotReady) 
-                   | (None, Some dd) -> (Printf.printf "lack D0\n"; raise LsNotReady)
-                   | _ -> (Printf.printf "Invalid GT entry in compute_enter_cond\n"; raise LsNotReady)) in
+                   | (Some d0, None) -> (Printf.printf "lack dD\n"; raise LoopsumNotReady) 
+                   | (None, Some dd) -> (Printf.printf "lack D0\n"; raise LoopsumNotReady)
+                   | _ -> (Printf.printf "Invalid GT entry in compute_enter_cond\n"; raise LoopsumNotReady)) in
                 V.BinOp(V.BITAND, cond, (guard_cond l')))
           | [] -> V.Constant(V.Int(V.REG_1, 1L))
       ) 
@@ -723,7 +724,7 @@ class loop_record tail head g= object(self)
       let ec = (
         match e with
           | Some exp -> exp
-          | None -> (Printf.printf "Invalid GT entry in min_ec\n"; raise LsNotReady)) in 
+          | None -> (Printf.printf "Invalid GT entry in min_ec\n"; raise LoopsumNotReady)) in 
       let rec loop idx l = 
         (match l with
            | h::l' -> (
@@ -732,21 +733,21 @@ class loop_record tail head g= object(self)
                  let ec' = (
                    match e' with
                      | Some exp -> exp
-                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
+                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LoopsumNotReady)) in
                    V.BinOp(V.BITAND, V.BinOp(V.SLT, ec, ec'), (loop (idx-1) l')))
                else if idx < 0 then (
                  let (_, e', _, ty', _, _, _, _, _) = h in
                  let ec' = (
                    match e' with
                      | Some exp -> exp
-                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LsNotReady)) in
+                     | None -> (Printf.printf "Invalid GT entry in min_ec: No EC\n"; raise LoopsumNotReady)) in
                    V.BinOp(V.BITAND, V.BinOp(V.SLE, ec, ec'), (loop (idx-1) l')))
                else (loop (idx-1) l'))
            | [] -> V.Constant(V.Int(V.REG_1, 1L))) in
         loop i l
     ) in
       try (
-        if List.length gt = 0 then raise LsNotReady;
+        if List.length gt = 0 then raise LoopsumNotReady;
         let res = ref [] in
         let enter_cond = compute_enter_cond bt gt in
           Printf.printf "enter_cond: %s\n" (V.exp_to_string enter_cond);
@@ -754,7 +755,7 @@ class loop_record tail head g= object(self)
             let precond = (min_ec i gt) in
             let ec = match ec_opt with
               | Some e -> e
-              | None -> (Printf.printf "Invalid GT entry: No EC\n"; raise LsNotReady) 
+              | None -> (Printf.printf "Invalid GT entry: No EC\n"; raise LoopsumNotReady) 
             in
               Printf.printf "min_ec: result = %s\n" (V.exp_to_string precond);
               let rec compute_vt l = (
@@ -763,7 +764,7 @@ class loop_record tail head g= object(self)
                       let (addr, v0, _, _, dv_opt) = h in
                       let dv = match dv_opt with
                         | Some e -> e
-                        | None -> (Printf.printf "Invalid IVT entry in compute_vt: No dV\n"; raise LsNotReady) in
+                        | None -> (Printf.printf "Invalid IVT entry in compute_vt: No dV\n"; raise LoopsumNotReady) in
                       let v' = V.BinOp(V.PLUS, v0, V.BinOp(V.TIMES, ec, dv)) in
                         [(addr, v')] @ (compute_vt l'))
                   | [] -> []
@@ -774,10 +775,10 @@ class loop_record tail head g= object(self)
                 if (eip = addr) then (apply iv_list)) 
           in
             List.iteri loop gt;
-            ls_set <- ls_set @ [(enter_cond, !res)];
-            Printf.printf "LS size: %d\n" (List.length ls_set);
+            lss <- lss @ [(enter_cond, !res)];
+            Printf.printf "LS size: %d\n" (List.length lss);
             loopsum_status <- Some true;) with
-        | LsNotReady -> (
+        | LoopsumNotReady -> (
             Printf.printf "Not ready to compute LS\n";)
 
   val mutable i = 0	
@@ -831,7 +832,7 @@ class dynamic_cfg (eip : int64) = object(self)
   (* Hashtbl loop head -> loop record *)
   val mutable looplist = Hashtbl.create 10	
                          
-  method get_heur = 
+  method use_heur = 
     let loop = self#get_current_loop in
       match loop with
         | None -> false
@@ -1030,7 +1031,7 @@ class dynamic_cfg (eip : int64) = object(self)
                            if !opt_trace_loop then Printf.printf "End on %d-th iter\n" (l#get_iter);
                            if (l#get_status != Some true) 
                                && (self#get_iter > 2) && (l#get_lss = []) then ( 
-                             l#compute_ls_set current_node apply;
+                             l#compute_lss current_node apply;
                              if !opt_trace_ivt then(
                                let ivt = l#get_ivt in
                                let ivt_len = List.length ivt in
@@ -1071,7 +1072,6 @@ class dynamic_cfg (eip : int64) = object(self)
    condition and return the symbolic values and addrs of of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
   method check_loopsum eip check s_func try_ext = (
-    (*Printf.printf "check_loopsum\n";*)
     let curr_loop = self#get_current_loop in
     let check_cond cond = check_cond check s_func cond in
     let trans_func (_ : bool) = V.Unknown("unused") in
@@ -1098,9 +1098,9 @@ class dynamic_cfg (eip : int64) = object(self)
         match (is_in_loop eip, self#get_iter) with
           | (true, 2) -> (
               (match curr_loop with
-                 | Some lp -> (
-                     if lp#get_lss = [] then
-                       raise (EmptyLss (None)))
+                 | Some lp -> 
+                     (if lp#get_lss = [] then
+                        raise (EmptyLss (None)))
                  | None -> raise (EmptyLss (None)));
               let rec choose_guard l = (
                 match l with
@@ -1159,7 +1159,8 @@ class dynamic_cfg (eip : int64) = object(self)
                          | Some l -> (l#set_status (Some false))
                          | _ -> ()))
                  | Some true -> ());
-              ([], 0L))) in
+              ([], 0L))
+      ) in
       (match res with
          | ([], _) -> ()
          | _ -> (
