@@ -1177,43 +1177,6 @@ struct
                else (Some (V.UnOp(V.NEG, rhs)), Some lhs, V.SLE))
           | V.Lval(V.Temp(var)) -> 
               (FormMan.if_expr_temp form_man var (fun e' -> loop e' targ) (None, None, V.NEQ) (fun v -> ()))
-          (* depricated code bellow*)
-          | V.BinOp(V.BITOR, (V.BinOp(V.EQ, _, _) (*as zf*)), V.BinOp(V.XOR, V.Cast(V.CAST_HIGH, V.REG_1, _), sf)) -> 
-              (*jle: (a == b)|(cast() ^ (SF))*)
-              loop sf targ
-          | V.BinOp(V.BITAND, (V.Cast(V.CAST_HIGH, V.REG_1, lhs)), V.BinOp(
-              V.XOR, (V.Cast(V.CAST_HIGH, V.REG_1, lhs')), V.Cast(V.CAST_HIGH, V.REG_1, d))) -> 
-              (*SF: cast(lhs)&(cast(lhs)^cast(D)) *)
-              (match (lhs = lhs') with
-                 | true -> (
-                     let typ_l = Vine_typecheck.infer_type_fast lhs in
-                     let typ_d = Vine_typecheck.infer_type_fast d in
-                     let (lhs', d') = (
-                       if typ_l = typ_d then (lhs, d)
-                       else if typ_l > typ_d then (lhs, V.Cast(V.CAST_SIGNED, typ_l, d))
-                       else (V.Cast(V.CAST_SIGNED, typ_d, lhs), d)) in  
-                     let rhs = (V.BinOp(V.MINUS, lhs', d')) in
-                       if targ = targ2 then (Some lhs', Some rhs, V.SLE) else
-                         Some rhs, Some lhs', V.SLT)
-                 | false -> (None, None, V.NEQ))			
-          (*| V.BinOp(V.BITOR, V.Cast(V.CAST_HIGH, V.REG_1, exp), (V.BinOp(V.EQ, _, _) as zf))  -> 
-           (*jle: cast() | (a == b)*)
-           (ignore(loop exp targ);
-           if targ = targ2 then (Some (eval_dis zf), V.SLE) else 
-           (Some (get_neg(eval_dis zf)), V.SLT))	*)	
-          | V.BinOp(V.XOR, V.BinOp(V.LT, lhs, rhs), V.BinOp(V.BITAND, V.Cast(V.CAST_HIGH, V.REG_1, _), V.BinOp(V.LT, _, _))) -> 
-              (*jl: (lhs<rhs)^(cast()&(a<b))*)
-              (if targ = targ2 then (Some lhs, Some rhs, V.SLT) else 
-                 (Some rhs, Some lhs, V.SLE))				
-          | V.BinOp(V.LT, lhs, rhs) ->
-              (*jb/jae*) 
-              (if targ = targ2 then (Some lhs, Some rhs, V.LT) else 
-                 (Some rhs, Some lhs, V.LE))
-          | V.BinOp(V.BITOR, V.BinOp(V.LT, lhs, rhs), V.BinOp(V.EQ, _, _)) -> 
-              (*jbe/ja*)
-              (if targ = targ2 then (Some lhs, Some rhs, V.LE) else 
-                 (Some rhs, Some lhs, V.LT)) 
-          | V.BinOp(op, _, _) -> (Printf.printf "Operation: %s\n" (V.binop_to_string op); (None, None, V.NEQ))
           | _ -> (None, None, V.NEQ))
       in
       let b = self#eval_cjmp_targ targ1 targ2 v e in 
