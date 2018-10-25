@@ -719,67 +719,67 @@ struct
       let eip = self#get_eip in
       let path = ref "" in
       let preference = (
-	try let pref = Hashtbl.find opt_branch_preference eip in
-	    path := "hashtable hit";
-	    match pref with
-	    | 0L -> Some false
-	    | 1L -> Some true
-	    | _ -> failwith "Unsupported branch preference"
-	with
-	| Not_found -> (
-		let ls_heur = (
-			if (!opt_concolic_prob = None && !opt_concrete_path = false) then (
-  		match fm#loop_heur targ1 targ2 with
-  		| (true, targ) when not (targ = -1L)-> 
-  			(if targ = targ1 then 
-  				(Some true) 
-  			else 
-  				(Some false))
-  		| _ -> (
-  			match fm#branch_heur targ1 targ2 with
-  			| Some targ -> (
-  				if targ = targ1 then (Some true) else (Some false))
-  			| None -> None))
-			else None) in
-		match ls_heur with
-		| Some r -> ls_heur
-		| None -> (
-      path := "hashtable miss (heur_preference)";
-  	  match dt#heur_preference with
-  	  | Some b ->
-  	    let choice = dt#random_float in
-  	    if choice < !opt_target_guidance then
-  	      (if !opt_trace_guidance then
-  		  Printf.eprintf "On %f, using heuristic choice %b\n"
-  		    choice b;
-  	       Some b)
-  	    else
-  	      (if !opt_trace_guidance then
-  		  Printf.eprintf "On %f, falling to cjmp_heuristic\n"
-  		    choice;
-  	       self#call_cjmp_heuristic eip targ1 targ2 None)
-  	  | None -> 
-  	      (match is_input_byte_compare e with
-  		 | Some (flip, c) ->
-  		     (try let prob = Hashtbl.find opt_rare_delims c in
-  		      let choice = dt#random_float in
-  			if choice > prob then
-  			  Some flip
-  			else
-  			  Some (not flip)
-  		      with
-  			| Not_found ->
-  			    if !opt_auto_rare_delims then
-  			      (Hashtbl.replace opt_varying_rare_delims c ();
-  			       if not
-  				 (Hashtbl.mem opt_varying_rare_delims c)
-  			       then
-  				 Printf.eprintf
-  				   "Enabling -rare-delim for 0x%02x\n" c);
-  			    (self#call_cjmp_heuristic eip targ1 targ2 None))
-  		 | None ->
-  		     (self#call_cjmp_heuristic eip targ1 targ2 None)))
-		) 
+        try let pref = Hashtbl.find opt_branch_preference eip in
+          path := "hashtable hit";
+          match pref with
+            | 0L -> Some false
+            | 1L -> Some true
+            | _ -> failwith "Unsupported branch preference"
+        with
+          | Not_found -> (
+              let ls_heur = (
+                if (!opt_concolic_prob = None && !opt_concrete_path = false) then (
+                  match fm#loop_heur targ1 targ2 with
+                    | (true, targ) when not (targ = -1L)-> 
+                        (if targ = targ1 then 
+                           (Some true) 
+                         else 
+                           (Some false))
+                    | _ -> (
+                        match fm#branch_heur targ1 targ2 with
+                          | Some targ -> (
+                              if targ = targ1 then (Some true) else (Some false))
+                          | None -> None))
+                else None) in
+                match ls_heur with
+                  | Some r -> ls_heur
+                  | None -> (
+                      path := "hashtable miss (heur_preference)";
+                      match dt#heur_preference with
+                        | Some b ->
+                            let choice = dt#random_float in
+                              if choice < !opt_target_guidance then
+                                (if !opt_trace_guidance then
+                                   Printf.eprintf "On %f, using heuristic choice %b\n"
+                                     choice b;
+                                 Some b)
+                              else
+                                (if !opt_trace_guidance then
+                                   Printf.eprintf "On %f, falling to cjmp_heuristic\n"
+                                     choice;
+                                 self#call_cjmp_heuristic eip targ1 targ2 None)
+                        | None -> 
+                            (match is_input_byte_compare e with
+                               | Some (flip, c) ->
+                                   (try let prob = Hashtbl.find opt_rare_delims c in
+                                    let choice = dt#random_float in
+                                      if choice > prob then
+                                        Some flip
+                                      else
+                                        Some (not flip)
+                                    with
+                                      | Not_found ->
+                                          if !opt_auto_rare_delims then
+                                            (Hashtbl.replace opt_varying_rare_delims c ();
+                                             if not
+                                                  (Hashtbl.mem opt_varying_rare_delims c)
+                                             then
+                                               Printf.eprintf
+                                                 "Enabling -rare-delim for 0x%02x\n" c);
+                                          (self#call_cjmp_heuristic eip targ1 targ2 None))
+                               | None ->
+                                   (self#call_cjmp_heuristic eip targ1 targ2 None)))
+            ) 
 				)in
       (*
 	Log.trace (Yojson_logger.LazyJson

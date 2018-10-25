@@ -1425,13 +1425,13 @@ struct
       let stmt = spfm#get_stmt in
         if is_cjmp stmt then (
           let eip = get_eip stmt in
-            Printf.printf "check_loopsum at 0x%Lx\n" eip;
             let (vt, eeip) = self#check_loopsum eip check_func self#simplify_exp try_ext in
               (match vt with
                  | [] -> 
                      spfm#run()
                  | _ -> (
                      (* Apply loop summarization to IVs in IVT*)
+                     Printf.printf "Apply loopsum at 0x%Lx\n" eip;
                      let rec loop l = (
                        match l with
                          | h::l' -> ( 
@@ -1444,7 +1444,10 @@ struct
                          | [] -> ()
                      ) in
                        loop vt;
-                       spfm#run()
+                       let lab = Printf.sprintf "pc_0x%Lx" eeip in
+                         self#set_eip eeip;
+                         Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
+                         lab
                    )
               ))
         else

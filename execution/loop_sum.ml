@@ -14,6 +14,7 @@ module V = Vine;;
 (* Some false := No satisfiable LS*)
 (* None := No LS at all*)
 exception EmptyLss of bool option
+exception LoopsumApplied of int64 option
 exception LoopsumNotReady
 
 open Exec_options;;
@@ -777,7 +778,7 @@ class loop_record tail head g= object(self)
             List.iteri loop gt;
             lss <- lss @ [(enter_cond, !res)];
             Printf.printf "LS size: %d\n" (List.length lss);
-            loopsum_status <- Some true;) with
+      ) with
         | LoopsumNotReady -> (
             Printf.printf "Not ready to compute LS\n";)
 
@@ -1100,7 +1101,9 @@ class dynamic_cfg (eip : int64) = object(self)
               (match curr_loop with
                  | Some lp -> 
                      (if lp#get_lss = [] then
-                        raise (EmptyLss (None)))
+                        raise (EmptyLss (None))
+                      else if lp#get_status = Some true then
+                        raise (LoopsumApplied (Some eip)))
                  | None -> raise (EmptyLss (None)));
               let rec choose_guard l = (
                 match l with
@@ -1160,6 +1163,14 @@ class dynamic_cfg (eip : int64) = object(self)
                          | _ -> ()))
                  | Some true -> ());
               ([], 0L))
+          | LoopsumApplied(e) ->
+              (let str = 
+                 (match e with
+                    | Some eip -> Printf.sprintf "in 0x%Lx" eip
+                    | _ -> "") 
+               in
+                 Printf.printf "Loopsum has been applied %s\n" str;
+                 ([], 0L))
       ) in
       (match res with
          | ([], _) -> ()
