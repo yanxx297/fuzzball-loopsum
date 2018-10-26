@@ -5,6 +5,7 @@
 *.cmo
 *.cma
 *.annot
+*.swp
 /Makefile
 /Makefile.in
 aclocal.m4
