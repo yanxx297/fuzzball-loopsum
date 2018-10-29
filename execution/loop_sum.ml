@@ -356,31 +356,33 @@ class loop_record tail head g= object(self)
           | Some false -> ());
         res)
     in
-    (* (D+dD-1)/(dD) *)
-    let ec_s d dD = (
-      let sum = V.BinOp(V.PLUS, d, dD) in
-      let no_iof = check_cond (V.BinOp(V.SLT, d, sum)) in
-        match no_iof with 
-          | (Some true | None) -> Some (V.BinOp(V.DIVIDE, V.BinOp(V.MINUS, sum, V.Constant(V.Int(ty, 1L))), dD))
-          | Some false -> Some (V.BinOp(V.PLUS, V.BinOp(
-              V.DIVIDE, V.BinOp(V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), 
-                                        V.Constant(V.Int(ty, 1L)))) 
-    ) 
-    in	
-    (* (D+dD-1)/(dD) for unsigend operands *)
-    let ec_u d dD = (
-      let sum = V.BinOp(V.PLUS, d, dD) in
-      let no_iof = check_cond (V.BinOp(V.LT, d, sum)) in
-        match no_iof with 
-          | (Some true | None) -> Some (V.BinOp(V.DIVIDE, V.BinOp(V.MINUS, sum, V.Constant(V.Int(ty, 1L))), dD))
-          | Some false -> Some (V.BinOp(V.PLUS, V.BinOp(
-              V.DIVIDE, V.BinOp(V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), 
-                                        V.Constant(V.Int(ty, 1L))))  
-    ) in
+    let compute_ec op d dD addr = 
+      let exp =
+        let sum = V.BinOp(V.PLUS, d, dD) in
+        let iof = 
+          match op with
+            | V.SLE | V.SLT| V.EQ -> check_cond (V.BinOp(V.SLT, sum, d))
+            | V.LE | V.LT -> check_cond (V.BinOp(V.LT, sum, d))
+            | _ -> failwith ""
+        in
+          match iof with
+            | None| Some true ->
+            Some (V.BinOp(V.PLUS, V.BinOp(V.DIVIDE, V.BinOp(
+              V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), V.Constant(V.Int(ty, 1L))))
+            | Some false -> Some (V.BinOp(V.DIVIDE, V.BinOp(V.MINUS, sum, V.Constant(V.Int(ty, 1L))), dD))
+      in
+        match (self#gt_search addr) with
+          | Some g -> 
+              (let (_, ec, _, _, _, _, _, _, _) = g in
+                 match ec with 
+                   | Some e -> ec
+                   | None -> exp) 
+          | None -> exp
+    in
+    let exp = 
       (* Compute D of the current iteration *)
       (* loop_cond := if true, stay in the loop*) 
       (* iof_cond := if true, integer overflow can happen when computing D*)
-    let exp = 
       (match op' with
          | V.EQ -> 
              (let d = (V.BinOp(V.MINUS, lhs, rhs)) in
@@ -451,16 +453,6 @@ class loop_record tail head g= object(self)
          | _  -> None
       ) 
     in
-    let compute_ec ecfunc d dD addr = (
-      match (self#gt_search addr) with
-        | Some g -> 
-            (let (_, ec, _, _, _, _, _, _, _) = g in
-               match ec with 
-                 | Some e -> (ec)
-                 | None -> (ecfunc d dD)) 
-        | None -> (ecfunc d dD)
-    ) 
-    in
       (*For each case, compute dd, check IOF according to D and dd, compute EC if not yet*)
       (*check whether dd' = dd, and then copy D' to D at the end*)
       (match exp with
@@ -486,7 +478,7 @@ class loop_record tail head g= object(self)
                                         match ((check_cond cond1), (check_cond cond2)) with
                                           | ((None | Some true),(None | Some true)) -> 
                                               (*D>0 && d<0*)
-                                              (Some d', Some dd', (compute_ec ec_s d (V.UnOp(V.NEG, dd')) addr))
+                                              (Some d', Some dd', (compute_ec op d (V.UnOp(V.NEG, dd')) addr))
                                           | ((None | Some true), Some false) -> (
                                               (*integer overflow: D>0 && d>=0*)
                                               Hashtbl.replace iof_cache addr ();
@@ -496,9 +488,9 @@ class loop_record tail head g= object(self)
                                               let iof_d' = (V.BinOp(V.MINUS, iof_d, iof_dd)) in
                                               let iof_cond = (V.BinOp(V.SLT, iof_d', iof_d)) in
                                                 (match (check_cond iof_cond) with
-                                                   | Some true -> ((Some iof_d, Some iof_dd, (compute_ec ec_s iof_d dd' addr)))
+                                                   | Some true -> ((Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr)))
                                                    | (Some false | None) -> 
-                                                       (Some iof_d, Some iof_dd, (compute_ec ec_s iof_d' dd' addr)))
+                                                       (Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr)))
                                             )
                                           | _  -> failwith "Unexpected SLE situation: this should not happen")
                                  | V.SLT -> 
@@ -508,7 +500,7 @@ class loop_record tail head g= object(self)
                                         match ((check_cond cond1), (check_cond cond2)) with
                                           | ((None | Some true),(None | Some true)) -> 
                                               (*D>=0 && d<0*)
-                                              (Some d', Some dd', (compute_ec ec_s d (V.UnOp(V.NEG, dd')) addr))
+                                              (Some d', Some dd', (compute_ec op d (V.UnOp(V.NEG, dd')) addr))
                                           | ((None | Some true), Some false) -> 
                                               (*integer overflow: D>0 && d>=0*)
                                               (Hashtbl.replace iof_cache addr ();
@@ -517,9 +509,9 @@ class loop_record tail head g= object(self)
                                                let iof_d' = (V.BinOp(V.MINUS, iof_d, iof_dd)) in
                                                let iof_cond = (V.BinOp(V.SLT, iof_d', iof_d)) in
                                                  (match (check_cond iof_cond) with
-                                                    | Some true -> (Some iof_d, Some iof_dd, (compute_ec ec_s iof_d dd' addr))
+                                                    | Some true -> (Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr))
                                                     | (Some false | None) -> 
-                                                        ((Some iof_d, Some iof_dd, (compute_ec ec_s iof_d' dd' addr))
+                                                        ((Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr))
                                                         )))
                                           | _  -> failwith "Unexpected SLT situation: this should not happen")
                                  | V.LE -> 
@@ -529,7 +521,7 @@ class loop_record tail head g= object(self)
                                           | ((None | Some true),(None | Some true)) -> 
                                               (*D>0 && d<0*)
                                               (let dd' = V.BinOp(V.MINUS, d, d') in
-                                                 (Some d', Some dd', (compute_ec ec_u d' dd' addr)))
+                                                 (Some d', Some dd', (compute_ec op d' dd' addr)))
                                           | ((None | Some true), Some false) -> 
                                               (*d = D'-D > 0, integer overflow*)
                                               (Hashtbl.replace iof_cache addr ();
@@ -538,8 +530,8 @@ class loop_record tail head g= object(self)
                                                let iof_d' = V.BinOp(V.PLUS, iof_d, dd') in
                                                let iof_cond = (V.BinOp(V.LT, iof_d', iof_d)) in
                                                  (match check_cond iof_cond with
-                                                    | Some true -> (Some iof_d, Some dd', (compute_ec ec_u iof_d dd' addr))
-                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec ec_u iof_d' dd' addr)))
+                                                    | Some true -> (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
+                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
                                               )
                                           | _ -> failwith "Unexpected LE situation: this should not happen")
                                  | V.LT -> 
@@ -550,7 +542,7 @@ class loop_record tail head g= object(self)
                                           | ((None | Some true),(None | Some true)) -> 
                                               (*D>=0 && d<0*)
                                               (let dd' = V.BinOp(V.MINUS, d, d') in
-                                                 (Some d', Some dd', (compute_ec ec_u d' dd' addr)))
+                                                 (Some d', Some dd', (compute_ec op d' dd' addr)))
                                           | ((None | Some true), Some false) -> 
                                               (*d = D'-D > 0, integer overflow*)
                                               (Hashtbl.replace iof_cache addr ();
@@ -559,8 +551,8 @@ class loop_record tail head g= object(self)
                                                let iof_d' = V.BinOp(V.PLUS, iof_d, dd') in
                                                let iof_cond = (V.BinOp(V.LT, iof_d', iof_d)) in
                                                  (match check_cond iof_cond with
-                                                    | Some true -> (Some iof_d, Some dd', (compute_ec ec_u iof_d dd' addr))
-                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec ec_u iof_d' dd' addr)))
+                                                    | Some true -> (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
+                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
                                               )
                                           | _ -> failwith "Unexpected LT situation: this should not happen")
                                  | V.EQ -> 
@@ -583,10 +575,10 @@ class loop_record tail head g= object(self)
                                                              | ((Some true | None), Some false) -> 
                                                                  (*If Both situations are possible, take the (D > 0, d < 0) case first*)
                                                                  (Printf.printf "default EQ\n";
-                                                                  (Some d', Some dd',(compute_ec ec_s d'(V.UnOp(V.NEG, dd')) addr)))
+                                                                  (Some d', Some dd',(compute_ec op d'(V.UnOp(V.NEG, dd')) addr)))
                                                              | (Some false, (Some true | None)) -> 
                                                                  (Printf.printf "inverse EQ\n";
-                                                                  (Some d', Some dd', (compute_ec ec_s (V.UnOp(V.NEG, d')) dd' addr)))
+                                                                  (Some d', Some dd', (compute_ec op (V.UnOp(V.NEG, d')) dd' addr)))
                                                              | _ -> 
                                                                  (** TODO: Handle integer overflow (dD and D on the same direction)*)
                                                                  (None, None, None))))
