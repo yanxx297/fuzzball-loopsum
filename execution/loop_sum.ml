@@ -31,27 +31,6 @@ let simplify_cond simplify exp =
        | _ -> (false)) in
     if is_flag exp then simplify exp else exp
 
-let check_cond check_func s_func cond =
-  let cond' = simplify_cond (s_func V.REG_1) cond in 
-  let str = Printf.sprintf "Check condition %s" (V.exp_to_string cond')  
-  in
-    let res = 
-      (match cond' with
-         | V.Constant(V.Int(V.REG_1, 1L)) -> Some true
-         | V.Constant(V.Int(V.REG_1, 0L)) -> Some false
-         | _ -> (check_func (cond)))
-    in
-      if !opt_trace_loopsum then
-        (let tristate = 
-           (match res with
-              | Some true -> "true only"
-              | Some false -> "false only"
-              | None -> "true or false")
-         in
-           Printf.printf "%s -> %s\n" str tristate
-        );
-      res
-
 let print_set set = 
   Printf.printf "Set = {";
   DS.iter (fun d -> Printf.printf "0x%08Lx, " d) set;
@@ -273,15 +252,11 @@ class loop_record tail head g= object(self)
                          match cond' with
                            | V.Constant(V.Int(V.REG_1, 1L)) -> ()
                            | V.Constant(V.Int(V.REG_1, 0L)) -> self#clean_ivt
-                           | _ ->( 			
-                               let res = check (cond') in
-                                 (match res with
-                                    | (None|Some true) -> (
-                                        Hashtbl.replace iv_cond_t cond ();
-                                        let rs = (if res = None then "None" else "Some true") in 
-                                          if !opt_trace_ivt then Printf.eprintf "is feasible(%s)\n" rs)
-                                    | Some false -> if !opt_trace_ivt then Printf.eprintf "is infeasible\n"; self#clean_ivt)
-                             ));
+                           | _ ->
+                               (if check cond' then
+                                  Hashtbl.replace iv_cond_t cond ()
+                               else
+                                 self#clean_ivt));
                         self#replace_iv (addr, v0, v', v', Some dv')
                   ))
     in
@@ -349,12 +324,10 @@ class loop_record tail head g= object(self)
   (* Add or update a guard table entry*)
   method add_g (addr: int64) lhs rhs op' ty s_func check (eeip: int64) =
     Printf.printf "add_g: iter %d, op = %s\n" iter (V.binop_to_string op');
-    let check_cond cond = (
-      let res = check_cond check s_func cond in
-        (match res with
-          | (None | Some true) -> Hashtbl.replace g_cond_t cond ()
-          | Some false -> ());
-        res)
+    let check_cond e = 
+      let res = check e in
+        if res then Hashtbl.replace g_cond_t e ();
+        res
     in
     let compute_ec op d dD addr = 
       let exp =
@@ -365,11 +338,10 @@ class loop_record tail head g= object(self)
             | V.LE | V.LT -> check_cond (V.BinOp(V.LT, sum, d))
             | _ -> failwith ""
         in
-          match iof with
-            | None| Some true ->
+          if iof then
             Some (V.BinOp(V.PLUS, V.BinOp(V.DIVIDE, V.BinOp(
               V.MINUS, d, V.Constant(V.Int(ty, 1L))), dD), V.Constant(V.Int(ty, 1L))))
-            | Some false -> Some (V.BinOp(V.DIVIDE, V.BinOp(V.MINUS, sum, V.Constant(V.Int(ty, 1L))), dD))
+          else Some (V.BinOp(V.DIVIDE, V.BinOp(V.MINUS, sum, V.Constant(V.Int(ty, 1L))), dD))
       in
         match (self#gt_search addr) with
           | Some g -> 
@@ -379,44 +351,19 @@ class loop_record tail head g= object(self)
                    | None -> exp) 
           | None -> exp
     in
+    (* Compute D of the current iteration *)
+    (* loop_cond := if true, stay in the loop*) 
+    (* iof_cond = lhs>0 && rhs<0 && lhs-rhs<lhs; if true, integer overflow can happen when computing D*)
+    (**TODO: handle IOF while computing D = lhs - rhs, when lhs >0 and rhs <0*)
     let exp = 
-      (* Compute D of the current iteration *)
-      (* loop_cond := if true, stay in the loop*) 
-      (* iof_cond := if true, integer overflow can happen when computing D*)
       (match op' with
          | V.EQ -> 
              (let d = (V.BinOp(V.MINUS, lhs, rhs)) in
                 Some d
              )
-         | V.SLE -> (
-             let loop_cond = V.BinOp(V.SLT, rhs, lhs)
-             in
-             let iof_cond = 
-               (*lhs>0 && rhs<0 && lhs-rhs<lhs*)
-               V.BinOp(V.BITAND, 
-                       V.BinOp(V.BITAND, 
-                               V.BinOp(V.SLT, rhs, V.Constant(V.Int(ty, 0L))), 
-                               V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
-                       V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
-             in 
-               Printf.printf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
-               Printf.printf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
-               match check_cond loop_cond with
-                 | (None | Some true) -> 
-                     (match check_cond iof_cond with
-                        | Some false -> 
-                            if (Hashtbl.mem iof_cache addr) then 
-                              Some (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs)) 
-                            else Some (V.BinOp(V.MINUS, lhs, rhs))
-                        | (None | Some true) -> 
-                            (**TODO: handle IOF while computing D = lhs - rhs, when lhs >0 and rhs <0*)
-                            (None))
-                 | Some false -> (None))
-         | V.SLT -> 
-             (let loop_cond = V.BinOp(V.SLE, rhs, lhs)
-              in
+         | V.SLE -> 
+             (let loop_cond = V.BinOp(V.SLT, rhs, lhs) in
               let iof_cond = 
-                (*lhs>0 && rhs<0 && lhs-rhs<lhs*)
                 V.BinOp(V.BITAND, 
                         V.BinOp(V.BITAND, 
                                 V.BinOp(V.SLT, rhs, V.Constant(V.Int(ty, 0L))), 
@@ -425,31 +372,42 @@ class loop_record tail head g= object(self)
               in 
                 Printf.printf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
                 Printf.printf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
-                match check_cond loop_cond with
-                  | (None | Some true) -> 
-                      (match check_cond iof_cond with
-                         | Some false -> 
-                             if (Hashtbl.mem iof_cache addr) then 
-                               Some (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs)) 
-                             else Some (V.BinOp(V.MINUS, lhs, rhs))
-                         | (None | Some true) -> 
-                             (**TODO: handle IOF while computing D = lhs - rhs, when lhs >0 and rhs <0*)
-(*
-                             (if true then
-                                failwith "lhs >0 and rhs <0";
- *)
-                               (None))
-                  | Some false -> (None))
-         | V.LE -> (let cond = V.BinOp(V.LT, rhs, lhs) in 
-                    let res = check_cond cond in
-                      match res with
-                        | (None | Some true) -> Some (V.BinOp(V.MINUS, lhs, rhs))
-                        | Some false -> (None))
-         | V.LT -> (let cond = V.BinOp(V.LE, rhs, lhs) in 
-                    let res = check_cond cond in
-                      match res with
-                        | (None | Some true) -> Some (V.BinOp(V.MINUS, lhs, rhs))
-                        | Some false -> (None))
+                if check_cond loop_cond then
+                  if check_cond iof_cond then None
+                  else if (Hashtbl.mem iof_cache addr) then
+                    Some (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs))
+                  else
+                    Some (V.BinOp(V.MINUS, lhs, rhs))
+                else None
+             )
+         | V.SLT -> 
+             (let loop_cond = V.BinOp(V.SLE, rhs, lhs) in
+              let iof_cond = 
+                V.BinOp(V.BITAND, 
+                        V.BinOp(V.BITAND, 
+                                V.BinOp(V.SLT, rhs, V.Constant(V.Int(ty, 0L))), 
+                                V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
+                        V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
+              in 
+                Printf.printf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
+                Printf.printf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
+                if check_cond loop_cond then
+                  if check_cond iof_cond then None
+                  else if (Hashtbl.mem iof_cache addr) then
+                    Some (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs))
+                  else Some (V.BinOp(V.MINUS, lhs, rhs))
+                else None
+             )
+         | V.LE -> 
+             (let cond = V.BinOp(V.LT, rhs, lhs) in
+                if check_cond cond then Some (V.BinOp(V.MINUS, lhs, rhs)) 
+                else None
+             )
+         | V.LT -> 
+             (let cond = V.BinOp(V.LE, rhs, lhs) in
+                if check_cond cond then Some (V.BinOp(V.MINUS, lhs, rhs))
+                else None
+             )
          | _  -> None
       ) 
     in
@@ -476,10 +434,10 @@ class loop_record tail head g= object(self)
                                            Printf.printf "cond1: %s\n" (V.exp_to_string cond1);
                                            Printf.printf "cond2: %s\n" (V.exp_to_string cond2));
                                         match ((check_cond cond1), (check_cond cond2)) with
-                                          | ((None | Some true),(None | Some true)) -> 
+                                          | (true, true) -> 
                                               (*D>0 && d<0*)
                                               (Some d', Some dd', (compute_ec op d (V.UnOp(V.NEG, dd')) addr))
-                                          | ((None | Some true), Some false) -> (
+                                          | (true, false) -> (
                                               (*integer overflow: D>0 && d>=0*)
                                               Hashtbl.replace iof_cache addr ();
                                               Printf.printf "Int Overflow!!!\n";
@@ -487,10 +445,10 @@ class loop_record tail head g= object(self)
                                               let iof_dd = s_func ty (V.UnOp(V.NEG, dd')) in
                                               let iof_d' = (V.BinOp(V.MINUS, iof_d, iof_dd)) in
                                               let iof_cond = (V.BinOp(V.SLT, iof_d', iof_d)) in
-                                                (match (check_cond iof_cond) with
-                                                   | Some true -> ((Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr)))
-                                                   | (Some false | None) -> 
-                                                       (Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr)))
+                                                if check_cond iof_cond then
+                                                  (Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr))
+                                                else
+                                                  (Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr))
                                             )
                                           | _  -> failwith "Unexpected SLE situation: this should not happen")
                                  | V.SLT -> 
@@ -498,91 +456,88 @@ class loop_record tail head g= object(self)
                                       let cond1 = V.BinOp(V.SLE, V.Constant(V.Int(ty, 0L)), d')
                                       and cond2 = V.BinOp(V.SLT, dd', V.Constant(V.Int(ty, 0L))) in
                                         match ((check_cond cond1), (check_cond cond2)) with
-                                          | ((None | Some true),(None | Some true)) -> 
+                                          | (true, true) -> 
                                               (*D>=0 && d<0*)
                                               (Some d', Some dd', (compute_ec op d (V.UnOp(V.NEG, dd')) addr))
-                                          | ((None | Some true), Some false) -> 
+                                          | (true, false) -> 
                                               (*integer overflow: D>0 && d>=0*)
                                               (Hashtbl.replace iof_cache addr ();
                                                let iof_d = s_func ty (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs)) in
                                                let iof_dd = s_func ty (V.UnOp(V.NEG, dd')) in
                                                let iof_d' = (V.BinOp(V.MINUS, iof_d, iof_dd)) in
                                                let iof_cond = (V.BinOp(V.SLT, iof_d', iof_d)) in
-                                                 (match (check_cond iof_cond) with
-                                                    | Some true -> (Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr))
-                                                    | (Some false | None) -> 
-                                                        ((Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr))
-                                                        )))
+                                                 if check_cond iof_cond then
+                                                   (Some iof_d, Some iof_dd, (compute_ec op iof_d dd' addr))
+                                                 else 
+                                                   (Some iof_d, Some iof_dd, (compute_ec op iof_d' dd' addr))
+                                              )
                                           | _  -> failwith "Unexpected SLT situation: this should not happen")
                                  | V.LE -> 
                                      (let cond1 = V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d')
                                       and cond2 = V.BinOp(V.LT, d', d) in
                                         match ((check_cond cond1), (check_cond cond2)) with
-                                          | ((None | Some true),(None | Some true)) -> 
+                                          | (true, true) -> 
                                               (*D>0 && d<0*)
                                               (let dd' = V.BinOp(V.MINUS, d, d') in
                                                  (Some d', Some dd', (compute_ec op d' dd' addr)))
-                                          | ((None | Some true), Some false) -> 
+                                          | (true, false) -> 
                                               (*d = D'-D > 0, integer overflow*)
                                               (Hashtbl.replace iof_cache addr ();
                                                let iof_d = s_func ty (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_u ty)), lhs)) in
                                                let dd' = V.BinOp(V.MINUS, d', d) in
                                                let iof_d' = V.BinOp(V.PLUS, iof_d, dd') in
                                                let iof_cond = (V.BinOp(V.LT, iof_d', iof_d)) in
-                                                 (match check_cond iof_cond with
-                                                    | Some true -> (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
-                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
-                                              )
+                                                 if check_cond iof_cond then
+                                                   (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
+                                                 else
+                                                   (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
                                           | _ -> failwith "Unexpected LE situation: this should not happen")
                                  | V.LT -> 
                                      (let cond1 = V.BinOp(V.LE, V.Constant(V.Int(ty, 0L)), d')
                                       (**cond1 may not be necessary, since an unsigend int is always >= 0*)
                                       and cond2 = V.BinOp(V.LT, d', d) in
                                         match ((check_cond cond1), (check_cond cond2)) with
-                                          | ((None | Some true),(None | Some true)) -> 
+                                          | (true, true) -> 
                                               (*D>=0 && d<0*)
                                               (let dd' = V.BinOp(V.MINUS, d, d') in
                                                  (Some d', Some dd', (compute_ec op d' dd' addr)))
-                                          | ((None | Some true), Some false) -> 
+                                          | (true, false) -> 
                                               (*d = D'-D > 0, integer overflow*)
                                               (Hashtbl.replace iof_cache addr ();
                                                let iof_d = s_func ty (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_u ty)), lhs)) in
                                                let dd' = V.BinOp(V.MINUS, d', d) in
                                                let iof_d' = V.BinOp(V.PLUS, iof_d, dd') in
                                                let iof_cond = (V.BinOp(V.LT, iof_d', iof_d)) in
-                                                 (match check_cond iof_cond with
-                                                    | Some true -> (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
-                                                    | (None | Some false) -> (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
-                                              )
+                                                 if check_cond iof_cond then
+                                                   (Some iof_d, Some dd', (compute_ec op iof_d dd' addr))
+                                                 else
+                                                   (Some iof_d, Some dd', (compute_ec op iof_d' dd' addr)))
                                           | _ -> failwith "Unexpected LT situation: this should not happen")
                                  | V.EQ -> 
                                      (let dd' = s_func ty (V.BinOp(V.MINUS, d', d)) in
-                                      let loop_cond = V.BinOp(V.EQ, d', V.Constant(V.Int(ty, 0L))) in
-                                        (**TODO: Move this to exp?*)
-                                        match (check_cond loop_cond) with
-                                          | Some true -> (None, None, None)
-                                          | _ -> 
-                                              (let iof_cond = V.BinOp(V.EQ, dd', V.Constant(V.Int(ty, 0L))) in
-                                                 match (check_cond iof_cond) with
-                                                   | Some true -> 
-                                                       (Printf.printf "dd' = 0: Infinity loop\n";
-                                                        (None, None, None))
-                                                   | _ -> 
-                                                       (let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
-                                                        and cond2 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), dd') in
-                                                          (match (check_cond cond1, check_cond cond2) with 
-                                                             | (None, None)
-                                                             | ((Some true | None), Some false) -> 
-                                                                 (*If Both situations are possible, take the (D > 0, d < 0) case first*)
-                                                                 (Printf.printf "default EQ\n";
-                                                                  (Some d', Some dd',(compute_ec op d'(V.UnOp(V.NEG, dd')) addr)))
-                                                             | (Some false, (Some true | None)) -> 
-                                                                 (Printf.printf "inverse EQ\n";
-                                                                  (Some d', Some dd', (compute_ec op (V.UnOp(V.NEG, d')) dd' addr)))
-                                                             | _ -> 
-                                                                 (** TODO: Handle integer overflow (dD and D on the same direction)*)
-                                                                 (None, None, None))))
-                                     )
+                                      let loop_cond = V.BinOp(V.NEQ, d', V.Constant(V.Int(ty, 0L))) in
+                                        if check_cond loop_cond then
+                                          (let iof_cond = V.BinOp(V.NEQ, dd', V.Constant(V.Int(ty, 0L))) in
+                                             if check_cond iof_cond then
+                                               (let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
+                                                and cond2 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), dd') in
+                                                  (match (check_cond cond1, check_cond cond2) with 
+                                                     | (true, true)
+                                                     | (true, false) -> 
+                                                         (*If Both situations are possible, take the (D > 0, d < 0) case first*)
+                                                         (Printf.printf "default EQ\n";
+                                                          (Some d', Some dd',(compute_ec op d'(V.UnOp(V.NEG, dd')) addr)))
+                                                     | (false, true) -> 
+                                                         (Printf.printf "inverse EQ\n";
+                                                          (Some d', Some dd', (compute_ec op (V.UnOp(V.NEG, d')) dd' addr)))
+                                                     | _ -> 
+                                                         (** TODO: Handle integer overflow (dD and D on the same direction)*)
+                                                         (None, None, None)))
+                                             else
+                                               (Printf.printf "dd' = 0: Infinity loop\n";
+                                                (None, None, None))
+                                          )
+                                        else (None, None, None))
                                  |_ -> failwith "add_g: illegal operation\n")
                           | _ -> (None, None, None)) 
                      in
@@ -857,7 +812,6 @@ class dynamic_cfg (eip : int64) = object(self)
         | Some l -> l#get_lss 
 
   method renew_ivt s_func check = 
-
     let loop = self#get_current_loop in
       match loop with
         | None -> (None)
@@ -1064,9 +1018,8 @@ class dynamic_cfg (eip : int64) = object(self)
   (* Check whether any existing loop summarization that can fit current
    condition and return the symbolic values and addrs of of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
-  method check_loopsum eip check s_func try_ext = (
+  method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) try_ext = (
     let curr_loop = self#get_current_loop in
-    let check_cond cond = check_cond check s_func cond in
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
@@ -1106,13 +1059,11 @@ class dynamic_cfg (eip : int64) = object(self)
                           Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
                           (vt, eeip))
                         else (
-                          match (check_cond pre_cond) with
-                            | (None | Some true) -> ( 
-                                Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
-                                Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
-                                (vt, eeip))
-                            | Some false -> (
-                                choose_guard l'))
+                          if check pre_cond then
+                            (Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
+                             Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
+                             (vt, eeip))
+                          else choose_guard l')
                     )
                   | [] -> failwith "choose_guard: This path cannot exit from any guard") in		
               let rec loop l = (
@@ -1122,14 +1073,13 @@ class dynamic_cfg (eip : int64) = object(self)
                       let (enter_cond, exit_cond) = h in
                       let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func in
                         if res then Printf.printf "and we decide to use it\n"
-                        else Printf.printf "but we cannot use it for some reason\n";
-                        if res then 
-                          (match (check_cond enter_cond) with
-                             | (None | Some true) -> (
-                                 Printf.printf "Enter_cond satisfiable, let's choose guard\n";
-                                 choose_guard exit_cond
-                               )
-                             | Some false -> (loop l'))
+                        else 
+                          Printf.printf "but we cannot use it for some reason\n";
+                        if res then
+                          (if check enter_cond then
+                             (Printf.printf "Enter_cond satisfiable, let's choose guard\n";
+                             choose_guard exit_cond)
+                           else loop l')
                         else raise (EmptyLss (Some true))				
                     )
                   | [] -> raise (EmptyLss (Some false))

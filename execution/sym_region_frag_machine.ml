@@ -1207,8 +1207,12 @@ struct
                                  Printf.printf "targ1 = 0x%08Lx\n" targ1;
                                  Printf.printf "targ2 = 0x%08Lx\n" targ2;
                                  if targ = targ1 then targ2 else targ1) in
-                               let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in
-                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check_cond eeip)
+                               let check e =
+                                 let typ = Vine_typecheck.infer_type_fast e in
+                                 let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
+                                   is_sat
+                               in
+                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check eeip)
                              else (
                                Printf.printf "Failed to create gt entry: targ = 0x%Lx, targ' = 0x%Lx\n" targ targ'
                              )) 
@@ -1353,12 +1357,6 @@ struct
           dt#count_query;
           res) 
       in
-      let check_func cond = (
-        dt#start_new_query;
-        let (res, _) = spfm#query_with_pc_choice cond true ident (fun() -> true) in
-          dt#count_query;
-          Some res)
-      in
       let get_eip stmt =
         let rec loop l = (
           match l with
@@ -1385,10 +1383,15 @@ struct
         in
           loop stmt
       in
+      let check e = 
+        let typ = Vine_typecheck.infer_type_fast e in
+        let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
+          is_sat
+      in
       let stmt = spfm#get_stmt in
         if is_cjmp stmt then (
           let eip = get_eip stmt in
-            let (vt, eeip) = self#check_loopsum eip check_func self#simplify_exp try_ext in
+            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext in
               (match vt with
                  | [] -> 
                      spfm#run()
@@ -2104,8 +2107,12 @@ struct
 	let h = self#get_loop_head in
 	(*Printf.printf "jump_hook: 0x%08Lx | 0x%08Lx\n" h eip;*) 
 	if (eip = h) then
-          let check_cond c = self#check_cond c (0x3100 + self#get_stmt_num) in
-            ignore(spfm#renew_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check_cond);
+          let check e = 
+            let typ = Vine_typecheck.infer_type_fast e in
+            let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
+              is_sat
+          in
+            ignore(spfm#renew_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
       if !opt_check_for_ret_addr_overwrite then
 	self#update_ret_addrs last_insn last_eip eip;
 

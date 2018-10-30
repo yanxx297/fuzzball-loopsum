@@ -18,9 +18,9 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method clean_ivt : unit
   method reset : unit
   method get_ivt : (int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list
-  method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> bool option
+  method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
   method is_iv_cond : Vine.exp -> bool
-  method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> int64 -> unit
+  method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
   method clean_gt : unit
   method get_gt : (int64 * Vine.exp option * Vine.binop_type * Vine.typ * Vine.exp option * Vine.exp option * Vine.exp option * Vine.exp option * int64) list
   method is_gt_cond : Vine.exp -> bool
@@ -49,16 +49,16 @@ class dynamic_cfg : int64 -> object
   method get_iter : int
   method add_iv : int64 -> Vine.exp -> unit
   method clean_ivt : unit
-  method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> bool option
+  method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
   method is_iv_cond : Vine.exp -> bool
-  method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool option) -> int64 -> unit
+  method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
   method clean_gt : unit
   method is_gt_cond : Vine.exp -> bool
   method make_snap : unit
   method reset_snap : unit
   method use_heur : bool
   method check_loopsum : int64 ->
-    (Vine.exp -> bool option) ->
+    (Vine.exp -> bool) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
