@@ -350,12 +350,13 @@ class binary_decision_tree = object(self)
     let rec viz_node n =  
       let id = n.ident in
       let eip = Int64.shift_right_logical n.eip_loc 16 in
-        Printf.fprintf fd "%d [label=\"%d:0x%Lx\"];\n" id id eip;
+      let ident = Int64.logand 0x000000000000ffffL n.eip_loc in 
+        Printf.fprintf fd "%d [label=\"%d:0x%Lx (0x%Lx)\"];\n" id id eip ident;
         (match get_f_child n with 
-           | Some(Some f) -> (Printf.fprintf fd "%d -> %d;\n" id f.ident ;viz_node f)
+           | Some(Some f) -> (Printf.fprintf fd "%d -> %d [label = \"false\"];\n" id f.ident ;viz_node f)
            | _ -> ());
         (match get_t_child n with 
-           | Some(Some t) -> (Printf.fprintf fd "%d -> %d;\n" id t.ident ;viz_node t)
+           | Some(Some t) -> (Printf.fprintf fd "%d -> %d [label = \"true\"];\n" id t.ident ;viz_node t)
            | _ -> ());
     in
       Printf.fprintf fd "digraph G {\n";
