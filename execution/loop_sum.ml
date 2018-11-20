@@ -150,6 +150,7 @@ end
 
 class loop_record tail head g= object(self)
   val mutable iter = 1
+  val mutable iter_snap = 1
   val id = head
   val loop_body = Hashtbl.create 100
   val mutable force_heur = true
@@ -165,6 +166,7 @@ class loop_record tail head g= object(self)
   (* Some false : there are some loopsums, but non of them work for current path*)
   (* Some true : a loopsum has been applied to this loop*)
   val mutable loopsum_status = None
+  val mutable loopsum_status_snap = None
                               
   method get_status = loopsum_status
  
@@ -218,6 +220,14 @@ class loop_record tail head g= object(self)
     self#clean_ivt;
     self#clean_gt;
     self#clean_bt      
+
+  method make_snap =
+    iter_snap <- iter;
+    loopsum_status_snap <- loopsum_status
+
+  method reset_snap =
+    iter <- iter_snap;
+    loopsum_status <- loopsum_status_snap
 
   val mutable ivt = []	(**addr | (V_0, V, V', dV)*)
   val iv_cond_t = Hashtbl.create 10
@@ -1149,28 +1159,25 @@ class dynamic_cfg (eip : int64) = object(self)
 
 
   method reset = 
-(*     Printf.printf "reset dcfg. looplist len = %d\n" (Hashtbl.length looplist);   *)
     g#reset; 
     current_node <- -1L;
 
   method make_snap =
-(*     Printf.printf "dcfg: make snap, l(loopstack) = %d, current node = 0x%08Lx\n" (Stack.length loopstack) current_node;   *)
     g#make_snap;
+    Hashtbl.iter (fun _ l -> l#make_snap) looplist;
     current_node_snap <- current_node;
     loopstack_snap <- Stack.copy loopstack
 
   method reset_snap =
-(*     Printf.printf "dcfg: reset snap at l(loopstack) = %d\n" (Stack.length loopstack);    *)
     g#reset_snap;
     current_node <- current_node_snap;
     loopstack <- Stack.copy loopstack_snap;
-    let func hid lr = 
-      if (lr#in_loop current_node) then 
-        ((*Printf.printf "reset_snap: push loop <0x%08Lx> into stack\n" hid;*)
-          Stack.push hid loopstack)
+    let func hd l = 
+      if (l#in_loop current_node) then 
+          (Stack.push hd loopstack;
+           l#reset_snap
+          )
     in
       Hashtbl.iter func looplist  
-
-(*initializer Printf.printf "create a dcfg\n"*)
 
 end

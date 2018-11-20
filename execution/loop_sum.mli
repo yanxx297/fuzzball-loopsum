@@ -17,6 +17,8 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method add_iv : int64 -> Vine.exp -> unit
   method clean_ivt : unit
   method reset : unit
+  method make_snap : unit
+  method reset_snap : unit
   method get_ivt : (int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list
   method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
   method is_iv_cond : Vine.exp -> bool
