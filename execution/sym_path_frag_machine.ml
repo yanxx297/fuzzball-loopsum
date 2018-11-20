@@ -520,6 +520,7 @@ struct
        0xa2yy SRFM jump, offset concretize, yy is bit or 0x80 + try
        0xa400 SRFM jump, concolic solve-pc
        0xb2yy SPFM addr_exp, bit yy
+       0xc0xx Loop summarization related
     *)
     method private eip_ident ident =
       let eip = self#get_eip in

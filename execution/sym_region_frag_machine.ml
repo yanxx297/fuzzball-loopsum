@@ -1349,13 +1349,14 @@ struct
     (* A wrapper around spfm#run() to loop for valid loopsum and apply it to 
      inductive variables. *)
     method run () = 
-      let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
       let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func = (
-        dt#start_new_query;
-        let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func (self#eip_ident ident)
-        in          
-          dt#count_query;
-          res) 
+        let ident = 0xc000 + (self#get_stmt_num land 0xfff) in
+          dt#start_new_query;
+          Printf.printf "Try extend for loopsum\n";
+          let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func (self#eip_ident ident)
+          in          
+            dt#count_query;
+            res) 
       in
       let get_eip stmt =
         let rec loop l = (
