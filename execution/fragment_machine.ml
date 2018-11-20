@@ -560,7 +560,7 @@ class virtual fragment_machine = object
          ((bool -> Vine.exp) ->
          (bool -> Vine.exp -> bool) ->
          (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> bool) ->
+         (unit -> bool) -> (bool -> bool) -> bool) -> bool ->
          (int64 * Vine.exp) list * int64
 
   method virtual schedule_proc : unit
@@ -738,10 +738,10 @@ struct
         | None -> ()
         | Some g -> (g#add_bd eip exp d))
 
-    method check_loopsum eip check s_func try_ext = 
+    method check_loopsum eip check s_func try_ext random_bit= 
       match current_dcfg with
         | None -> ([], 0L)
-        | Some g -> g#check_loopsum eip check s_func try_ext
+        | Some g -> g#check_loopsum eip check s_func try_ext random_bit
 
     method simplify_exp typ e = e
 

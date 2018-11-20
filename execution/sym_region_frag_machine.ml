@@ -1391,7 +1391,7 @@ struct
       let stmt = spfm#get_stmt in
         if is_cjmp stmt then (
           let eip = get_eip stmt in
-            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext in
+            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit in
               (match vt with
                  | [] -> 
                      spfm#run()

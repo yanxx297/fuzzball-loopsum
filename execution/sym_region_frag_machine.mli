@@ -80,7 +80,7 @@ sig
          ((bool -> Vine.exp) ->
          (bool -> Vine.exp -> bool) ->
          (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> bool) ->
+         (unit -> bool) -> (bool -> bool) -> bool) -> bool ->
          (int64 * Vine.exp) list * int64
 		method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 

@@ -13,7 +13,7 @@ module V = Vine;;
 (* Some true := find some LS whose precond is satisfiable, but we don't use them*)
 (* Some false := No satisfiable LS*)
 (* None := No LS at all*)
-exception EmptyLss of bool option
+exception EmptyLss
 exception LoopsumApplied of int64 option
 exception LoopsumNotReady
 
@@ -212,11 +212,12 @@ class loop_record tail head g= object(self)
 
   method private simplify_exp simplify exp = simplify exp
 
-  method reset = 
+  method reset =
     iter <- 0;
+    loopsum_status <- None;
     self#clean_ivt;
     self#clean_gt;
-    self#clean_bt
+    self#clean_bt      
 
   val mutable ivt = []	(**addr | (V_0, V, V', dV)*)
   val iv_cond_t = Hashtbl.create 10
@@ -286,17 +287,19 @@ class loop_record tail head g= object(self)
       ivt <- loop ivt
 
   method add_iv (addr: int64) (exp: V.exp) =
-    Printf.printf "add_iv: try mem[0x%08Lx] \n" addr;
+(*     Printf.printf "add_iv: try mem[0x%08Lx] \n" addr; *)
     match (self#ivt_search addr) with
       | Some iv -> (
           let (addr, v0, v, v', dv) = iv in
-            if not (v' = exp) then self#replace_iv (addr, v0, v, exp, dv);
+            if not (v' = exp) then self#replace_iv (addr, v0, v, exp, dv);)
+(*
             if !opt_trace_ivt then 
-              Printf.printf "add_iv: replace %s with %s at 0x%08Lx\n" (V.exp_to_string v') (V.exp_to_string exp) addr)
+               Printf.printf "add_iv: replace %s with %s at 0x%08Lx\n" (V.exp_to_string v') (V.exp_to_string exp) addr) 
+ *)
       | None -> (
           if iter = 1 then (
-            ivt <- ivt @ [(addr, exp, exp, exp, None)];
-            if !opt_trace_ivt then Printf.printf "add_iv: Store [0x%08Lx] = %s\n" addr (V.exp_to_string exp))
+            ivt <- ivt @ [(addr, exp, exp, exp, None)];)
+(*             if !opt_trace_ivt then Printf.printf "add_iv: Store [0x%08Lx] = %s\n" addr (V.exp_to_string exp)) *)
           else (
             if !opt_trace_ivt then Printf.printf " 0x%08Lx not exist in ivt\n" addr)			
         ) 
@@ -323,7 +326,7 @@ class loop_record tail head g= object(self)
 
   (* Add or update a guard table entry*)
   method add_g (addr: int64) lhs rhs op' ty s_func check (eeip: int64) =
-    Printf.printf "add_g: iter %d, op = %s\n" iter (V.binop_to_string op');
+(*     Printf.printf "add_g: iter %d, op = %s\n" iter (V.binop_to_string op'); *)
     let check_cond e = 
       let res = check e in
         if res then Hashtbl.replace g_cond_t e ();
@@ -431,8 +434,8 @@ class loop_record tail head g= object(self)
                                         if !opt_trace_gt then 
                                           (Printf.printf "dd = %s\n" (V.exp_to_string (V.BinOp(V.MINUS, d', d)));
                                            Printf.printf "dd' = %s\n" (V.exp_to_string dd');
-                                           Printf.printf "cond1: %s\n" (V.exp_to_string cond1);
-                                           Printf.printf "cond2: %s\n" (V.exp_to_string cond2));
+                                           Printf.printf "cond1 = %s\n" (V.exp_to_string cond1);
+                                           Printf.printf "cond2 =  %s\n" (V.exp_to_string cond2));
                                         match ((check_cond cond1), (check_cond cond2)) with
                                           | (true, true) -> 
                                               (*D>0 && d<0*)
@@ -607,7 +610,7 @@ class loop_record tail head g= object(self)
   val mutable bt = Hashtbl.create 10		
 
   method add_bd (eip:int64) (e: V.exp) (d:int64) = (
-    Printf.printf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e);
+(*     Printf.printf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); *)
     Hashtbl.replace bt eip (e, d))
 
   method check_bt eip = (
@@ -1018,16 +1021,14 @@ class dynamic_cfg (eip : int64) = object(self)
   (* Check whether any existing loop summarization that can fit current
    condition and return the symbolic values and addrs of of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
-  method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) try_ext = (
+  (*TODO: loopsum preconds should be add to path cond*)
+  method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) try_ext (random_bit:bool) = (
     let curr_loop = self#get_current_loop in
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
-    let both_fail_func (b : bool) = (
-      Printf.eprintf "Fail to create new branch for loopsum";
-      b
-    ) in
-    let do_check() = (
+    let both_fail_func (b : bool) = b in
+    let do_check () = (
       let is_in_loop eip = (
         let looprec = ref None in
         let func h l = (
@@ -1046,65 +1047,88 @@ class dynamic_cfg (eip : int64) = object(self)
               (match curr_loop with
                  | Some lp -> 
                      (if lp#get_lss = [] then
-                        raise (EmptyLss (None))
+                        raise EmptyLss
                       else if lp#get_status = Some true then
                         raise (LoopsumApplied (Some eip)))
-                 | None -> raise (EmptyLss (None)));
-              let rec choose_guard l = (
-                match l with
-                  | h::l' -> (
-                      let (pre_cond, vt, eeip) = h in 
-                        if l' = [] then (
-                          Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
-                          Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
-                          (vt, eeip))
-                        else (
-                          if check pre_cond then
-                            (Printf.printf "Use the LS who exit from 0x%08Lx\n" eeip;
-                             Printf.printf "Guard Precond: %s\n" (V.exp_to_string pre_cond);
-                             (vt, eeip))
-                          else choose_guard l')
-                    )
-                  | [] -> failwith "choose_guard: This path cannot exit from any guard") in		
-              let rec loop l = (
-                match l with
-                  | h::l' -> (
-                      Printf.printf "Find a loop sum, \n";
-                      let (enter_cond, exit_cond) = h in
-                      let res = try_ext trans_func try_func non_try_func (fun() -> true) both_fail_func in
-                        if res then Printf.printf "and we decide to use it\n"
-                        else 
-                          Printf.printf "but we cannot use it for some reason\n";
-                        if res then
-                          (if check enter_cond then
-                             (Printf.printf "Enter_cond satisfiable, let's choose guard\n";
-                             choose_guard exit_cond)
-                           else loop l')
-                        else raise (EmptyLss (Some true))				
-                    )
-                  | [] -> raise (EmptyLss (Some false))
-              ) in 
+                 | None -> raise EmptyLss);
+              let use_loopsum l=
+                (let rec get_precond l =
+                   match l with
+                     | (h, _)::rest -> 
+                         (if rest != [] then 
+                            V.BinOp(V.BITOR, h, (get_precond rest))     
+                          else h
+                         ) 
+                     | [] -> failwith ""
+                 in
+                 let random_bit_gen () = 
+                   let cond = get_precond l in
+                     if check cond then true
+                     (* TODO: uncomment the code bellow to enable random decision*)
+(*
+                       (Printf.printf "It is possible to use loopsum\n";
+                        let rand = random_bit in 
+                          Printf.printf "random: %B\n" rand;
+                          rand)
+ *)
+                       else false
+                 in
+                 let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func
+                 in
+                   if res then
+                     Printf.printf "Decide to use loopsum\n"
+                   else Printf.printf "Decide not to use loopsum\n";
+                   res
+                )
+              in
+              let choose_loopsum l =
+                let feasible = ref [] in
+                  List.iteri (fun id h ->
+                               let (precond, postcond) = h in
+                               (* Currently postcond is a list, but it should only have one element *)
+                               (* TODO: only keep one guard for each loopsum*)
+                               let (_, vt, eeip) = List.nth postcond 0 in
+                                 if check precond then feasible := (id, vt, eeip)::!feasible
+                  ) l;
+                  let n = Random.int (List.length !feasible) in
+                    List.nth !feasible n
+              in
+              let extend_with_loopsum l id =
+                let true_bit () = true in
+                let false_bit () = false in
+                let rec extend l level =
+                  match l with
+                    | h::rest -> 
+                        (if level < id then
+                           (ignore(try_ext trans_func try_func non_try_func false_bit both_fail_func);
+                            extend rest (level+1)
+                           )
+                         else if level = id then
+                           ignore(try_ext trans_func try_func non_try_func true_bit both_fail_func)
+                         else failwith ""
+                        )
+                    | [] -> ()
+                in
+                  extend l 0
+              in
               let l = self#get_lss in
-                if List.length l = 0 then (Printf.printf "LS set is empty\n"; raise (EmptyLss (None))) 
-                else loop l
+                if (use_loopsum l) then
+                  let (id, vt, eeip) =  choose_loopsum l in
+                    extend_with_loopsum l id;
+                    (vt, eeip)
+                else ([], 0L) 
             )
           | _ -> ([], 0L)) 
     in
       let res = (
         try do_check () with
-          | EmptyLss(r) -> (
-              (match r with
-                 | (None | Some false) -> (				
-                     if (self#get_iter = 2) then (
-                       let b = try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func in
-                         Printf.printf "try_ext: return %B\n" b;
-                         Printf.printf "No valid loop sum to use\n");
-                     if r = Some false then (
-                       match curr_loop with
-                         | Some l -> (l#set_status (Some false))
-                         | _ -> ()))
-                 | Some true -> ());
-              ([], 0L))
+          | EmptyLss -> 
+              (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func);
+               (match curr_loop with
+                  | Some loop -> 
+                      if loop#get_lss != [] then loop#set_status (Some false)
+                  | _ -> ());
+               ([], 0L))
           | LoopsumApplied(e) ->
               (let str = 
                  (match e with
