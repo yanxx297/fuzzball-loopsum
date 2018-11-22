@@ -38,6 +38,7 @@ let print_set set =
 
 class simple_node id = object(self)
   val mutable domin = DS.singleton id
+  val mutable domin_snap = DS.singleton id
 
   method add_domin dom = domin <- (DS.add dom domin)
 
@@ -47,6 +48,13 @@ class simple_node id = object(self)
 
   method update_domin update = domin <- DS.union domin update
 
+  method make_snap = 
+    domin_snap <- DS.empty;
+    DS.iter (fun d -> domin_snap <- DS.add d domin_snap) domin
+
+  method reset_snap = 
+    domin <- DS.empty;
+    DS.iter (fun d -> domin <- DS.add d domin) domin_snap
 end
 
 (*A graph class contains some basic operations and automatic dominator computation*)
@@ -134,14 +142,17 @@ class simple_graph (h: int64) = object(self)
     in
       Hashtbl.iter reset_node nodes;
 
-  (* Define an empty make_snap for graph in case we need to make real snap in 
-   the future *)
-  method make_snap = ()
+  method make_snap =
+    Hashtbl.iter (fun _ n -> 
+                    match n with
+                      | Some node -> node#make_snap
+                      | None -> ()
+    ) nodes
 
   method reset_snap =
     let reset_node e n = 
       match n with
-        | Some node -> node#set_domin DS.empty
+        | Some node -> node#make_snap
         | None -> ()
     in
       Hashtbl.iter reset_node nodes;
