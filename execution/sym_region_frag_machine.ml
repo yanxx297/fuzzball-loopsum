@@ -1389,33 +1389,40 @@ struct
         let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
           is_sat
       in
+      (* Apply loop summarization to IVs in IVT*)
+      let apply_loopsum eip vt eeip = 
+        Printf.printf "Apply loopsum at 0x%Lx\n" eip;
+        let rec loop l = (
+          match l with
+            | h::l' -> ( 
+                let (addr, exp) = h in
+                let ty = Vine_typecheck.infer_type_fast exp in 
+                let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                  self#store_exp addr exp' ty;
+                  loop l'
+              )
+            | [] -> ()
+        ) in
+          loop vt;
+          let lab = Printf.sprintf "pc_0x%Lx" eeip in
+            self#set_eip eeip;
+            Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
+            lab
+      in
       let stmt = spfm#get_stmt in
         if is_cjmp stmt then (
           let eip = get_eip stmt in
             let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit in
+              (* Check loopsum again after executing a cjmp instruction *)
               (match vt with
                  | [] -> 
-                     spfm#run()
-                 | _ -> (
-                     (* Apply loop summarization to IVs in IVT*)
-                     Printf.printf "Apply loopsum at 0x%Lx\n" eip;
-                     let rec loop l = (
-                       match l with
-                         | h::l' -> ( 
-                             let (addr, exp) = h in
-                             let ty = Vine_typecheck.infer_type_fast exp in 
-                             let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
-                               self#store_exp addr exp' ty;
-                               loop l'
-                           )
-                         | [] -> ()
-                     ) in
-                       loop vt;
-                       let lab = Printf.sprintf "pc_0x%Lx" eeip in
-                         self#set_eip eeip;
-                         Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
-                         lab
-                   )
+                     (let lab = spfm#run() in
+                      let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit in
+                        match vt with
+                          | [] -> lab
+                          | _ -> apply_loopsum eip vt eeip
+                     )
+                 | _ -> apply_loopsum eip vt eeip
               ))
         else
           spfm#run()
