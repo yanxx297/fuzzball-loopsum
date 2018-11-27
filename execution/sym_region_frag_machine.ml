@@ -1415,13 +1415,7 @@ struct
             let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit in
               (* Check loopsum again after executing a cjmp instruction *)
               (match vt with
-                 | [] -> 
-                     (let lab = spfm#run() in
-                      let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit in
-                        match vt with
-                          | [] -> lab
-                          | _ -> apply_loopsum eip vt eeip
-                     )
+                 | [] -> spfm#run() 
                  | _ -> apply_loopsum eip vt eeip
               ))
         else
