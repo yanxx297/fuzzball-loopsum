@@ -1067,9 +1067,7 @@ class dynamic_cfg (eip : int64) = object(self)
           | (true, 2) -> (
               (match curr_loop with
                  | Some lp -> 
-                     (if lp#get_lss = [] then
-                        raise EmptyLss
-                      else if lp#get_status = Some true then
+                     (if lp#get_status = Some true then
                         raise (LoopsumApplied (Some eip)))
                  | None -> raise EmptyLss);
               let use_loopsum l=
@@ -1080,7 +1078,7 @@ class dynamic_cfg (eip : int64) = object(self)
                             V.BinOp(V.BITOR, h, (get_precond rest))     
                           else h
                          ) 
-                     | [] -> failwith ""
+                     | [] -> V.Constant(V.Int(V.REG_1, 0L))
                  in
                  let random_bit_gen () = 
                    let cond = get_precond l in
