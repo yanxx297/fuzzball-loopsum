@@ -65,7 +65,7 @@ class dynamic_cfg : int64 -> object
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
       (bool -> unit) ->
-      (unit -> bool) -> (bool -> bool) -> bool) -> bool ->
+      (unit -> bool) -> (bool -> bool) -> int -> bool) -> bool ->
     (int64 * Vine.exp) list * int64
   method get_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list
   method add_bd : int64 -> Vine.exp -> int64 -> unit

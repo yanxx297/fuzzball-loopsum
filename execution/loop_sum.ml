@@ -1094,7 +1094,7 @@ class dynamic_cfg (eip : int64) = object(self)
  *)
                        else false
                  in
-                 let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func
+                 let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
                  in
                    if res then
                      Printf.printf "Decide to use loopsum\n"
@@ -1121,11 +1121,11 @@ class dynamic_cfg (eip : int64) = object(self)
                   match l with
                     | h::rest -> 
                         (if level < id then
-                           (ignore(try_ext trans_func try_func non_try_func false_bit both_fail_func);
+                           (ignore(try_ext trans_func try_func non_try_func false_bit both_fail_func level);
                             extend rest (level+1)
                            )
                          else if level = id then
-                           ignore(try_ext trans_func try_func non_try_func true_bit both_fail_func)
+                           ignore(try_ext trans_func try_func non_try_func true_bit both_fail_func level)
                          else failwith ""
                         )
                     | [] -> ()
@@ -1135,7 +1135,7 @@ class dynamic_cfg (eip : int64) = object(self)
               let l = self#get_lss in
                 if (use_loopsum l) then
                   let (id, vt, eeip) =  choose_loopsum l in
-                    extend_with_loopsum l id;
+                    extend_with_loopsum l (id+1);
                     (vt, eeip)
                 else ([], 0L) 
             )
@@ -1144,7 +1144,7 @@ class dynamic_cfg (eip : int64) = object(self)
       let res = (
         try do_check () with
           | EmptyLss -> 
-              (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func);
+              (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
                (match curr_loop with
                   | Some loop -> 
                       if loop#get_lss != [] then loop#set_status (Some false)
