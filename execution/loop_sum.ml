@@ -10,11 +10,6 @@
 module DS = Set.Make (Int64);;
 module V = Vine;;
 
-(* Some true := find some LS whose precond is satisfiable, but we don't use them*)
-(* Some false := No satisfiable LS*)
-(* None := No LS at all*)
-exception EmptyLss
-exception LoopsumApplied of int64 option
 exception LoopsumNotReady
 
 open Exec_options;;
@@ -1049,27 +1044,22 @@ class dynamic_cfg (eip : int64) = object(self)
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
     let both_fail_func (b : bool) = b in
-    let do_check () = (
-      let is_in_loop eip = (
-        let looprec = ref None in
-        let func h l = (
-          if (l#in_loop eip) && !looprec = None then
-            looprec := Some l
-        )
-        in
-          Hashtbl.iter func looplist;
-          (match !looprec with      
-             | Some l -> true
-             | _ -> false)
+    let is_in_loop eip = (
+      let looprec = ref None in
+      let func h l = (
+        if (l#in_loop eip) && !looprec = None then
+          looprec := Some l
       )
       in
+        Hashtbl.iter func looplist;
+        (match !looprec with      
+           | Some l -> true
+           | _ -> false)
+    )
+    in
+    let do_check = (
         match (is_in_loop eip, self#get_iter) with
           | (true, 2) -> (
-              (match curr_loop with
-                 | Some lp -> 
-                     (if lp#get_status = Some true then
-                        raise (LoopsumApplied (Some eip)))
-                 | None -> raise EmptyLss);
               let use_loopsum l=
                 (let rec get_precond l =
                    match l with
@@ -1140,22 +1130,22 @@ class dynamic_cfg (eip : int64) = object(self)
           | _ -> ([], 0L)) 
     in
       let res = (
-        try do_check () with
-          | EmptyLss -> 
-              (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
-               (match curr_loop with
-                  | Some loop -> 
-                      if loop#get_lss != [] then loop#set_status (Some false)
-                  | _ -> ());
-               ([], 0L))
-          | LoopsumApplied(e) ->
-              (let str = 
-                 (match e with
-                    | Some eip -> Printf.sprintf "in 0x%Lx" eip
-                    | _ -> "") 
-               in
-                 Printf.printf "Loopsum has been applied %s\n" str;
-                 ([], 0L))
+        match curr_loop with
+           | Some lp -> 
+               (if lp#get_status = Some true then
+                  (Printf.printf "Loopsum has been applied in 0x%Lx\n" eip;
+                   ([], 0L))
+                else 
+                  do_check
+               )
+           | None -> 
+               if (is_in_loop eip) && (self#get_iter = 2) then
+                 (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
+                  (match curr_loop with
+                     | Some loop -> 
+                         if loop#get_lss != [] then loop#set_status (Some false)
+                     | _ -> ()););
+               ([], 0L)
       ) in
       (match res with
          | ([], _) -> ()
