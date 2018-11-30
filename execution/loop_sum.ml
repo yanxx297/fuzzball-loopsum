@@ -1046,106 +1046,103 @@ class dynamic_cfg (eip : int64) = object(self)
     let both_fail_func (b : bool) = b in
     let is_in_loop eip = (
       let looprec = ref None in
-      let func h l = (
-        if (l#in_loop eip) && !looprec = None then
-          looprec := Some l
-      )
-      in
-        Hashtbl.iter func looplist;
+        Hashtbl.iter (fun h l ->
+                        if (l#in_loop eip) && !looprec = None then
+                          looprec := Some l
+        ) looplist;
         (match !looprec with      
-           | Some l -> true
+           | Some l -> Printf.printf "0x%Lx is in loop\n" eip;true
            | _ -> false)
     )
     in
-    let do_check = (
-        match (is_in_loop eip, self#get_iter) with
-          | (true, 2) -> (
-              let use_loopsum l=
-                (let rec get_precond l =
-                   match l with
-                     | (h, _)::rest -> 
-                         (if rest != [] then 
-                            V.BinOp(V.BITOR, h, (get_precond rest))     
-                          else h
-                         ) 
-                     | [] -> V.Constant(V.Int(V.REG_1, 0L))
-                 in
-                 let random_bit_gen () = 
-                   let cond = get_precond l in
-                     if check cond then true
-                     (* TODO: uncomment the code bellow to enable random decision*)
-(*
-                       (Printf.printf "It is possible to use loopsum\n";
-                        let rand = random_bit in 
-                          Printf.printf "random: %B\n" rand;
-                          rand)
- *)
-                       else false
-                 in
-                 let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
-                 in
-                   if res then
-                     Printf.printf "Decide to use loopsum\n"
-                   else Printf.printf "Decide not to use loopsum\n";
-                   res
+    let do_check () = (
+      let use_loopsum l=
+        (let rec get_precond l =
+           match l with
+             | (h, _)::rest -> 
+                 (if rest != [] then 
+                    V.BinOp(V.BITOR, h, (get_precond rest))     
+                  else h
+                 ) 
+             | [] -> V.Constant(V.Int(V.REG_1, 0L))
+         in
+         let random_bit_gen () = 
+           let cond = get_precond l in
+             if check cond then true
+             (* TODO: uncomment the code bellow to enable random decision*)
+             (*
+              (Printf.printf "It is possible to use loopsum\n";
+              let rand = random_bit in 
+              Printf.printf "random: %B\n" rand;
+              rand)
+              *)
+             else false
+         in
+         let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
+         in
+           if res then
+             Printf.printf "Decide to use loopsum\n"
+           else Printf.printf "Decide not to use loopsum\n";
+           res
+        )
+      in
+      let choose_loopsum l =
+        let feasible = ref [] in
+          List.iteri (fun id h ->
+                        let (precond, postcond) = h in
+                        (* Currently postcond is a list, but it should only have one element *)
+                        (* TODO: only keep one guard for each loopsum*)
+                        let (_, vt, eeip) = List.nth postcond 0 in
+                          if check precond then feasible := (id, vt, eeip)::!feasible
+          ) l;
+          let n = Random.int (List.length !feasible) in
+            List.nth !feasible n
+      in
+      let extend_with_loopsum l id =
+        let true_bit () = true in
+        let false_bit () = false in
+        let rec extend l level =
+          match l with
+            | h::rest -> 
+                (if level < id then
+                   (ignore(try_ext trans_func try_func non_try_func false_bit both_fail_func level);
+                    extend rest (level+1)
+                   )
+                 else if level = id then
+                   ignore(try_ext trans_func try_func non_try_func true_bit both_fail_func level)
+                 else failwith ""
                 )
-              in
-              let choose_loopsum l =
-                let feasible = ref [] in
-                  List.iteri (fun id h ->
-                               let (precond, postcond) = h in
-                               (* Currently postcond is a list, but it should only have one element *)
-                               (* TODO: only keep one guard for each loopsum*)
-                               let (_, vt, eeip) = List.nth postcond 0 in
-                                 if check precond then feasible := (id, vt, eeip)::!feasible
-                  ) l;
-                  let n = Random.int (List.length !feasible) in
-                    List.nth !feasible n
-              in
-              let extend_with_loopsum l id =
-                let true_bit () = true in
-                let false_bit () = false in
-                let rec extend l level =
-                  match l with
-                    | h::rest -> 
-                        (if level < id then
-                           (ignore(try_ext trans_func try_func non_try_func false_bit both_fail_func level);
-                            extend rest (level+1)
-                           )
-                         else if level = id then
-                           ignore(try_ext trans_func try_func non_try_func true_bit both_fail_func level)
-                         else failwith ""
-                        )
-                    | [] -> ()
-                in
-                  extend l 0
-              in
-              let l = self#get_lss in
-                if (use_loopsum l) then
-                  let (id, vt, eeip) =  choose_loopsum l in
-                    extend_with_loopsum l (id+1);
-                    (vt, eeip)
-                else ([], 0L) 
-            )
-          | _ -> ([], 0L)) 
+            | [] -> ()
+        in
+          extend l 0
+      in
+      let l = self#get_lss in
+        if (use_loopsum l) then
+          let (id, vt, eeip) =  choose_loopsum l in
+            extend_with_loopsum l (id+1);
+            (vt, eeip)
+            else ([], 0L)) 
     in
-      let res = (
-        match curr_loop with
-           | Some lp -> 
-               (if lp#get_status = Some true then
-                  (Printf.printf "Loopsum has been applied in 0x%Lx\n" eip;
-                   ([], 0L))
-                else 
-                  do_check
-               )
-           | None -> 
-               if (is_in_loop eip) && (self#get_iter = 2) then
-                 (ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
-                  (match curr_loop with
-                     | Some loop -> 
-                         if loop#get_lss != [] then loop#set_status (Some false)
-                     | _ -> ()););
-               ([], 0L)
+    let res = 
+      (match (is_in_loop eip, self#get_iter) with
+         | (true, 2) -> (
+             match curr_loop with
+               | Some lp -> 
+                   (if lp#get_status = Some true then
+                      (Printf.printf "Loopsum has been applied in 0x%Lx\n" eip;
+                       ([], 0L))
+                    else
+                      do_check ()
+                   )
+               | None -> 
+                   ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
+                   (match curr_loop with
+                      | Some loop -> 
+                          if loop#get_lss != [] then loop#set_status (Some false)
+                      | _ -> ());
+                   ([], 0L)
+           )
+         | _ -> ([], 0L)
       ) in
       (match res with
          | ([], _) -> ()
