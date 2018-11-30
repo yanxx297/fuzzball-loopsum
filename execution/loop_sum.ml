@@ -169,7 +169,9 @@ class loop_record tail head g= object(self)
 
   (* Status about applying loopsum*)
   (* None: haven't tried to apply loopsum *)
-  (* Some false : there are some loopsums, but non of them work for current path*)
+  (* Some false : has checked this loop but no feasible loopsum, either *) 
+  (*              because non of them work for current path or there is *)
+  (*              no loopsum*)
   (* Some true : a loopsum has been applied to this loop*)
   val mutable loopsum_status = None
   val mutable loopsum_status_snap = None
@@ -1118,21 +1120,28 @@ class dynamic_cfg (eip : int64) = object(self)
       in
       let l = self#get_lss in
         if (use_loopsum l) then
-          let (id, vt, eeip) =  choose_loopsum l in
-            extend_with_loopsum l (id+1);
-            (vt, eeip)
-            else ([], 0L)) 
+          ((match curr_loop with
+              | Some loop -> loop#set_status (Some true)
+              | _ -> failwith "");
+           let (id, vt, eeip) =  choose_loopsum l in
+             extend_with_loopsum l (id+1);
+             (vt, eeip))
+        else 
+          ((match curr_loop with
+              | Some loop -> loop#set_status (Some false)
+              | _ -> failwith "");
+           ([], 0L))
+    ) 
     in
     let res = 
       (match (is_in_loop eip, self#get_iter) with
          | (true, 2) -> (
              match curr_loop with
-               | Some lp -> 
-                   (if lp#get_status = Some true then
-                      (Printf.printf "Loopsum has been applied in 0x%Lx\n" eip;
-                       ([], 0L))
-                    else
-                      do_check ()
+               | Some lp ->
+                   (match lp#get_status with
+                      | Some true -> Printf.printf "Loopsum has been applied in 0x%Lx\n" eip; ([], 0L)
+                      | Some false -> Printf.printf "Loop has been checked but no loopsum applies in 0x%Lx\n" eip; ([], 0L)
+                      | _ -> do_check ()
                    )
                | None -> 
                    ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
@@ -1143,13 +1152,8 @@ class dynamic_cfg (eip : int64) = object(self)
                    ([], 0L)
            )
          | _ -> ([], 0L)
-      ) in
-      (match res with
-         | ([], _) -> ()
-         | _ -> (
-             match curr_loop with
-               | Some l -> l#set_status (Some true)
-               | _ -> ()));
+      ) 
+    in
       res
   )
 
