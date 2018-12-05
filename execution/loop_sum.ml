@@ -157,6 +157,7 @@ end
 class loop_record tail head g= object(self)
   val mutable iter = 1
   val mutable iter_snap = 1
+  (* A loop record is identified by the dest of the backedge *)
   val id = head
   val loop_body = Hashtbl.create 100
   val mutable force_heur = true
@@ -914,20 +915,21 @@ class dynamic_cfg (eip : int64) = object(self)
   )
 
   (* Return bool * bool: whether enter a loop * whether enter a different loop*)	
-  method private enter_loop tail head = 
+  method private enter_loop src dest = 
     let is_backedge t h = g#is_dom t h in 
-    let current_head = (match (self#get_current_loop) with
-                            | None -> -1L
-                            | Some loop -> loop#get_head)
+    let current_head = 
+      (match (self#get_current_loop) with
+         | None -> -1L
+         | Some loop -> loop#get_head)
     in
-      (*Printf.printf "enter_loop: 0x%08Lx, 0x%08Lx\n" head current_head;*)
-      if current_head = head then (
-        Printf.eprintf "enter_loop: current_head = head\n";
+      Printf.eprintf "enter loop: 0x%08Lx\n" current_head;
+      if current_head = dest then (
+        Printf.eprintf "enter loop: current_head = new eip\n";
         let l = self#get_current_loop in
           (true, false, l))
-      else if is_backedge tail head then (
-        Printf.eprintf "enter_loop: Find backedge 0x%Lx --> 0x%Lx\n" tail head;
-        let loop = new loop_record tail head g in
+      else if is_backedge src dest then (
+        Printf.eprintf "enter loop: Find backedge 0x%Lx --> 0x%Lx\n" src dest;
+        let loop = new loop_record src dest g in
         let dup = ref None in
         let check_dup eip lc = (
           match ((self#is_parent lc loop), (self#is_parent loop lc)) with
@@ -937,23 +939,14 @@ class dynamic_cfg (eip : int64) = object(self)
             | _ -> ()
         ) in
           Hashtbl.iter check_dup looplist;
-          (*let dup = (
-           match self#get_current_loop with
-           | Some lc -> 
-           (match ((self#is_parent lc loop), (self#is_parent loop lc)) with
-           | (true, true) -> ( 
-           Printf.printf "find dup\n"; 
-           Some lc)
-           | _ -> None)
-           | None  -> None) in*)
           Printf.printf "looplist: %d\n" (Hashtbl.length looplist);
           match !dup with
             | None -> (true, true, Some loop)
             | Some l -> (true, true, !dup)
       )
-      else if Hashtbl.mem looplist head then 
-        (Printf.printf "enter_loop: find loop in looplist: 0x%08Lx\n" head;
-         (true, true, Some (Hashtbl.find looplist head)))
+      else if Hashtbl.mem looplist dest then 
+        (Printf.printf "enter loop: find loop in looplist: 0x%08Lx\n" dest;
+         (true, true, Some (Hashtbl.find looplist dest)))
       else (false, false, None)
 
   method private exit_loop eip = 
@@ -968,6 +961,7 @@ class dynamic_cfg (eip : int64) = object(self)
         | None -> false
         | Some l -> l#in_loop eip
 
+  (* TODO: rewrite this method with new structure, merge enter_loop & exit_loop, and add new loop to looplist*)
   method add_node (eip:int64) apply =
     let ret =
       (if current_node != -1L 
@@ -981,12 +975,12 @@ class dynamic_cfg (eip : int64) = object(self)
                  | None -> ErrLoop)
            | (true, true, loop) -> (
                (* Enter a different loop *)
-               if !opt_trace_loop then Printf.printf "enter loop {0x%08Lx ...} via (0x%08Lx -> 0x%08Lx)\n" eip current_node eip;
+               if !opt_trace_loop then Printf.eprintf "enter loop {0x%08Lx ...} via (0x%08Lx -> 0x%08Lx)\n" eip current_node eip;
                Stack.push eip loopstack;
                match loop with
                  | Some lp -> (
                      if not (Hashtbl.mem looplist eip) then Hashtbl.add looplist eip lp; 
-                     if !opt_trace_loop then Printf.printf "iter : %d\n" lp#get_iter;
+                     if !opt_trace_loop then Printf.eprintf "iter : %d\n" lp#get_iter;
                      EnterLoop)
                  | None -> ErrLoop	
              )
@@ -996,7 +990,7 @@ class dynamic_cfg (eip : int64) = object(self)
                     (* Exit loop *)
                     (match loop with
                        | Some l -> (
-                           if !opt_trace_loop then Printf.printf "End on %d-th iter\n" (l#get_iter);
+                           if !opt_trace_loop then Printf.eprintf "End on %d-th iter\n" (l#get_iter);
                            if (l#get_status != Some true) 
                                && (self#get_iter > 2) && (l#get_lss = []) then ( 
                              l#compute_lss current_node apply;
