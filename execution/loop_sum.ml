@@ -155,8 +155,8 @@ class simple_graph (h: int64) = object(self)
 end
 
 class loop_record tail head g= object(self)
-  val mutable iter = 1
-  val mutable iter_snap = 1
+  val mutable iter = 2
+  val mutable iter_snap = 2
   (* A loop record is identified by the dest of the backedge *)
   val id = head
   val loop_body = Hashtbl.create 100
@@ -257,7 +257,7 @@ class loop_record tail head g= object(self)
     let len = List.length ivt in
     let cmp (addr, v0, v, v', dv_opt) =
       match iter with
-        | 1 -> self#replace_iv (addr, v0, v', v', dv_opt)
+        | 2 -> self#replace_iv (addr, v0, v', v', dv_opt)
         | _ -> (
             let dv' = V.BinOp(V.MINUS, v', v) in 
               match dv_opt with
@@ -280,7 +280,7 @@ class loop_record tail head g= object(self)
                         self#replace_iv (addr, v0, v', v', Some dv')
                   ))
     in
-      if iter >= 1 then List.iter cmp ivt;
+      if iter >= 2 then List.iter cmp ivt;
       let len' = List.length ivt in
         if (len' - len) < 0 then Some false else Some true 
 
@@ -316,7 +316,7 @@ class loop_record tail head g= object(self)
                Printf.printf "add_iv: replace %s with %s at 0x%08Lx\n" (V.exp_to_string v') (V.exp_to_string exp) addr) 
  *)
       | None -> (
-          if iter = 1 then (
+          if iter = 2 then (
             ivt <- ivt @ [(addr, exp, exp, exp, None)];)
 (*             if !opt_trace_ivt then Printf.printf "add_iv: Store [0x%08Lx] = %s\n" addr (V.exp_to_string exp)) *)
           else (
@@ -578,7 +578,7 @@ class loop_record tail head g= object(self)
                             Printf.printf "add_g: replace %s with %s at 0x%08Lx\n" d_str (V.exp_to_string e) addr)
                  )
                | None -> (
-                   if iter = 1 then (
+                   if iter = 2 then (
                      gt <- gt @ [(addr, None, op', ty, exp, exp, exp, None, eeip)];
                      if !opt_trace_gt then Printf.printf "add_g: Store [0x%08Lx] = %s\n" addr (V.exp_to_string e)))))
 
@@ -808,7 +808,7 @@ class dynamic_cfg (eip : int64) = object(self)
         | None -> false
         | Some l -> (
             match l#get_status with
-              | Some false -> false
+              | Some false -> true
               | None -> 
                   (if l#get_lss != [] then 
                      false
