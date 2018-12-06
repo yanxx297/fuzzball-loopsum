@@ -899,21 +899,6 @@ class dynamic_cfg (eip : int64) = object(self)
       let loop = Hashtbl.find looplist current_loop in Some loop 
     )
 
-  (*update addtional instructions to main loop's loop body*)	
-  method private update_loop main add = (
-    Printf.printf "update_loop\n";
-    let loopbody = add#get_loop_body in
-    let check eip () = (
-      main#add_insn eip
-    ) in
-      Hashtbl.iter check loopbody;
-      main#inc_iter;
-      main#clean_ivt;
-      main#clean_gt;
-      main#update_loopsum;
-      main  	
-  )
-
   (* Return bool * bool: whether enter a loop * whether enter a different loop*)	
   method private enter_loop src dest = 
     let is_backedge t h = g#is_dom t h in 
@@ -930,19 +915,7 @@ class dynamic_cfg (eip : int64) = object(self)
       else if is_backedge src dest then (
         Printf.eprintf "enter loop: Find backedge 0x%Lx --> 0x%Lx\n" src dest;
         let loop = new loop_record src dest g in
-        let dup = ref None in
-        let check_dup eip lc = (
-          match ((self#is_parent lc loop), (self#is_parent loop lc)) with
-            | (true, true) -> ( 
-                Printf.printf "find dup\n"; 
-                if !dup = None then dup := Some (self#update_loop lc loop))
-            | _ -> ()
-        ) in
-          Hashtbl.iter check_dup looplist;
-          Printf.printf "looplist: %d\n" (Hashtbl.length looplist);
-          match !dup with
-            | None -> (true, true, Some loop)
-            | Some l -> (true, true, !dup)
+          (true, true, Some loop)
       )
       else if Hashtbl.mem looplist dest then 
         (Printf.printf "enter loop: find loop in looplist: 0x%08Lx\n" dest;
