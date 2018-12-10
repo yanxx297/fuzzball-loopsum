@@ -155,8 +155,8 @@ class simple_graph (h: int64) = object(self)
 end
 
 class loop_record tail head g= object(self)
-  val mutable iter = 2
-  val mutable iter_snap = 2
+  val mutable iter = 1
+  val mutable iter_snap = 1
   (* A loop record is identified by the dest of the backedge *)
   val id = head
   val loop_body = Hashtbl.create 100
@@ -952,8 +952,10 @@ class dynamic_cfg (eip : int64) = object(self)
                Stack.push eip loopstack;
                match loop with
                  | Some lp -> (
+                     lp#inc_iter;
                      if not (Hashtbl.mem looplist eip) then Hashtbl.add looplist eip lp; 
-                     if !opt_trace_loop then Printf.eprintf "iter : %d\n" lp#get_iter;
+                     if !opt_trace_loop then 
+                       Printf.eprintf "Now at iter %d, there are %d loops in list\n" lp#get_iter (Hashtbl.length looplist);
                      EnterLoop)
                  | None -> ErrLoop	
              )
@@ -1083,7 +1085,7 @@ class dynamic_cfg (eip : int64) = object(self)
                 )
             | [] -> ()
         in
-          extend l 0
+          extend l 1
       in
       let l = self#get_lss in
         if (use_loopsum l) then
