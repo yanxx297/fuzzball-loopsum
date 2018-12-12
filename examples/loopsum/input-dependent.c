@@ -32,11 +32,17 @@ int main(int argc, char **argv){
 	}
 	input = atoi(argv[1]);
 	res = func(input);
-	if (res == 1)
+	if (res == 1){
 		printf("Error code 1.\n");
-	else if(res == 2)
+		fflush(stdout);
+	}
+	else if(res == 2){
 		printf("Error code 2.\n");
-	else
+		fflush(stdout);
+	}
+	else{
 		printf("End with normal result.\n");
+		fflush(stdout);
+	}
 	return 0;
 }
