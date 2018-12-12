@@ -59,7 +59,7 @@ input-dependent -- ./input-dependent 0
 # -skip-call-ret-symbol     The eip of an atoi that transform string format input
 #                           to an integer.        
 ```
-
+## Reference
 <a name="footnote1">[1]</a>
 Patrice Godefroid and Daniel Luchaup. Automatic partial loop summarization in
 dynamic test generation. In Proceedings of the 2011 International Symposium on
