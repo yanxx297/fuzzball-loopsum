@@ -1019,6 +1019,32 @@ class binary_decision_tree = object(self)
     self#mark_all_seen_node cur;
     self#propagate_heur cur
 
+  (* Return whether the given node is all_seen*)
+  (* This is an extra method added for loop summarization*)
+  method is_all_seen ident =
+    if ident < 0 then false
+    else
+      let node = ident_to_node ident in
+        node.all_seen
+
+  method get_f_child ident =
+    if ident < 0 then -1
+    else
+      let node = ident_to_node ident in
+      let child = get_f_child node in
+        match child with
+          | None | Some None -> -1
+          | Some (Some n) -> ref_dt_node n
+
+  method get_t_child ident =
+    if ident < 0 then -1
+    else
+      let node = ident_to_node ident in
+      let child = get_t_child node in
+        match child with
+          | None | Some None -> -1
+          | Some (Some n) -> ref_dt_node n
+
   method try_again_p = not (get_dt_node root_ident).all_seen
 
   method check_last_choices =

@@ -35,12 +35,15 @@ class binary_decision_tree : object
   method set_heur : int -> unit
   method heur_preference : bool option
   method mark_all_seen : unit
+  method cur_ident : int
+  method is_all_seen: int -> bool
+  method get_f_child: int -> int 
+  method get_t_child: int -> int 
 
   method check_last_choices : bool option
   method have_choice : bool
   method try_again_p : bool
 
-  method cur_ident : int
   method is_live_ident : int -> bool
   method cur_can_reach_ident : int -> bool option
 

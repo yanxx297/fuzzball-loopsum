@@ -167,6 +167,7 @@ class loop_record tail head g= object(self)
   (* exit_cond = (precond, VT, exit_eip) *)
   val mutable lss = []
   method get_lss = lss
+  method set_lss s = lss <- s
 
   (* Status about applying loopsum*)
   (* None: haven't tried to apply loopsum *)
@@ -802,6 +803,32 @@ class dynamic_cfg (eip : int64) = object(self)
   (* Hashtbl loop head -> loop record *)
   val mutable looplist = Hashtbl.create 10	
                          
+  (* Check whether the subtree of current loopsum is all_seen *)
+  (* If all_seen, turn it off in lss *)
+(*
+  method mark_all_seen_loopsum (is_all_seen: int -> bool) =
+    match cur_ls_node with
+      | (Some ident, id, hd) ->
+          assert(id != -1 && hd != -1L);
+          if is_all_seen ident then 
+            Printf.eprintf "Node %d(%d) is all_seen\n" ident id
+          else
+            Printf.eprintf "Node %d(%d) is not all_seen\n" ident id;
+          let l = Hashtbl.find_opt looplist hd in
+            (match l with
+               | Some loop -> 
+                   (let lss = loop#get_lss in
+                      loop#set_lss 
+                        (List.mapi (fun i x -> 
+                                      if i = id then 
+                                        let (enter_cond, exit_cond, _ ) = x in 
+                                          (enter_cond, exit_cond, true)
+                                          else x
+                        ) lss))
+               | _ -> failwith "")
+      | (None, _, _) -> (Printf.eprintf "cur_ls_node is empty\n")
+ *)
+
   method use_heur = 
     let loop = self#get_current_loop in
       match loop with
@@ -1009,7 +1036,9 @@ class dynamic_cfg (eip : int64) = object(self)
    condition and return the symbolic values and addrs of of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
   (*TODO: loopsum preconds should be add to path cond*)
-  method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) try_ext (random_bit:bool) = (
+  method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) 
+        try_ext (random_bit:bool) (is_all_seen: int -> bool) (cur_ident: int) 
+        get_t_child get_f_child = (
     let curr_loop = self#get_current_loop in
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
@@ -1028,17 +1057,20 @@ class dynamic_cfg (eip : int64) = object(self)
     in
     let do_check () = (
       let use_loopsum l=
-        (let rec get_precond l =
+        (let rec get_precond l cur =
            match l with
              | (h, _)::rest -> 
-                 (if rest != [] then 
-                    V.BinOp(V.BITOR, h, (get_precond rest))     
-                  else h
+                 (Printf.eprintf "cur = %d, all_seen = %B\n" cur (is_all_seen (get_t_child cur));
+                  if cur = -1 || not (is_all_seen (get_t_child cur)) then 
+                    V.BinOp(V.BITOR, h, (get_precond rest (get_f_child cur)))
+                  else 
+                    get_precond rest (get_f_child cur)
                  ) 
              | [] -> V.Constant(V.Int(V.REG_1, 0L))
          in
          let random_bit_gen () = 
-           let cond = get_precond l in
+           let cond = get_precond l (get_t_child cur_ident) in
+             Printf.eprintf "useLoopsum cond: %s\n" (V.exp_to_string cond);
              if check cond then true
              (* TODO: uncomment the code bellow to enable random decision*)
              (*
@@ -1125,7 +1157,6 @@ class dynamic_cfg (eip : int64) = object(self)
     in
       res
   )
-
 
   method reset = 
     g#reset; 

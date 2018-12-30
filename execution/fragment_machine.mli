@@ -309,19 +309,22 @@ class virtual fragment_machine : object
   method virtual clean_ivt : unit
   method virtual renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
   method virtual print_dt : unit
-  method virtual add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
+  method virtual add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> 
+         Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> 
+         int64 -> unit
   method virtual clean_gt : unit
   method virtual is_gt_cond : Vine.exp -> bool
-	method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
-	method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
-	method virtual check_loopsum : int64 ->
-         (Vine.exp -> bool) ->
-         (Vine.typ -> Vine.exp -> Vine.exp) ->
-         ((bool -> Vine.exp) ->
-         (bool -> Vine.exp -> bool) ->
-         (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> int -> bool) -> bool ->
-         (int64 * Vine.exp) list * int64
+  method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
+  method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+  method virtual check_loopsum : int64 ->
+    (Vine.exp -> bool) ->
+    (Vine.typ -> Vine.exp -> Vine.exp) ->
+    ((bool -> Vine.exp) ->
+      (bool -> Vine.exp -> bool) ->
+      (bool -> unit) ->
+      (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
+    bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
+    (int64 * Vine.exp) list * int64
 	
   method virtual schedule_proc : unit
   method virtual alloc_proc : (unit -> unit) -> unit
@@ -608,19 +611,22 @@ sig
     method clean_ivt : unit
     method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
     method is_iv_cond : Vine.exp -> bool
-    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
+    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> 
+         Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> 
+         int64 -> unit
     method clean_gt : unit
     method is_gt_cond : Vine.exp -> bool
-		method add_bd : int64 -> Vine.exp -> int64 -> unit
-		method check_loopsum : int64 ->
-         (Vine.exp -> bool) ->
-         (Vine.typ -> Vine.exp -> Vine.exp) ->
-         ((bool -> Vine.exp) ->
+    method add_bd : int64 -> Vine.exp -> int64 -> unit
+    method check_loopsum : int64 -> 
+        (Vine.exp -> bool) ->
+        (Vine.typ -> Vine.exp -> Vine.exp) ->
+        ((bool -> Vine.exp) ->
          (bool -> Vine.exp -> bool) ->
          (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> int -> bool) -> bool ->
-         (int64 * Vine.exp) list * int64
-		method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+         (unit -> bool) -> (bool -> bool) -> int -> bool) ->
+        bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
+        (int64 * Vine.exp) list * int64
+    method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 
     method print_dt : unit
 		

@@ -555,13 +555,14 @@ class virtual fragment_machine = object
   method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
   method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
   method virtual check_loopsum : int64 ->
-         (Vine.exp -> bool) ->
-         (Vine.typ -> Vine.exp -> Vine.exp) ->
-         ((bool -> Vine.exp) ->
-         (bool -> Vine.exp -> bool) ->
-         (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> int-> bool) -> bool ->
-         (int64 * Vine.exp) list * int64
+    (Vine.exp -> bool) ->
+    (Vine.typ -> Vine.exp -> Vine.exp) ->
+    ((bool -> Vine.exp) ->
+      (bool -> Vine.exp -> bool) ->
+      (bool -> unit) ->
+      (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
+    bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
+    (int64 * Vine.exp) list * int64
 
   method virtual schedule_proc : unit
   method virtual maybe_switch_proc : int64 -> int64 option
@@ -738,10 +739,10 @@ struct
         | None -> ()
         | Some g -> (g#add_bd eip exp d))
 
-    method check_loopsum eip check s_func try_ext random_bit = 
+    method check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child = 
       match current_dcfg with
         | None -> ([], 0L)
-        | Some g -> g#check_loopsum eip check s_func try_ext random_bit
+        | Some g -> g#check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child
 
     method simplify_exp typ e = e
 

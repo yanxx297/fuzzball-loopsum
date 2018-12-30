@@ -36,6 +36,10 @@ class virtual decision_tree = object
   method virtual set_heur : int -> unit
   method virtual heur_preference : bool option
   method virtual mark_all_seen : unit
+  method virtual cur_ident : int
+  method virtual is_all_seen : int -> bool
+  method virtual get_f_child: int -> int 
+  method virtual get_t_child: int -> int 
 
   method virtual check_last_choices : bool option
   method virtual have_choice : bool

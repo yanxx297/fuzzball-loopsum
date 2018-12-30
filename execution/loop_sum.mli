@@ -31,6 +31,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method get_heur : bool
   method compute_lss : int64 -> ((int64 * Vine.exp) list -> unit) -> unit
   method get_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list
+  method set_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list -> unit
   method add_insn : int64 -> unit
   method get_loop_body : (int64, unit) Hashtbl.t
   method add_bd : int64 -> Vine.exp -> int64 -> unit
@@ -65,7 +66,8 @@ class dynamic_cfg : int64 -> object
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
       (bool -> unit) ->
-      (unit -> bool) -> (bool -> bool) -> int -> bool) -> bool ->
+      (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
+    bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
     (int64 * Vine.exp) list * int64
   method get_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list
   method add_bd : int64 -> Vine.exp -> int64 -> unit

@@ -287,19 +287,22 @@ sig
     method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
     method print_dt : unit
     method is_iv_cond : Vine.exp -> bool
-    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
+    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> 
+         Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> 
+         int64 -> unit
     method clean_gt : unit
     method is_gt_cond : Vine.exp -> bool
-		method add_bd : int64 -> Vine.exp -> int64 -> unit
-		method check_loopsum : int64 ->
-         (Vine.exp -> bool) ->
-         (Vine.typ -> Vine.exp -> Vine.exp) ->
-         ((bool -> Vine.exp) ->
-         (bool -> Vine.exp -> bool) ->
-         (bool -> unit) ->
-         (unit -> bool) -> (bool -> bool) -> int -> bool) -> bool ->
-         (int64 * Vine.exp) list * int64
-		method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
+    method add_bd : int64 -> Vine.exp -> int64 -> unit
+    method check_loopsum : int64 ->
+    	(Vine.exp -> bool) ->
+    	(Vine.typ -> Vine.exp -> Vine.exp) ->
+    	((bool -> Vine.exp) ->
+      	 (bool -> Vine.exp -> bool) ->
+      	 (bool -> unit) ->
+      	 (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
+    	bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
+    	(int64 * Vine.exp) list * int64
+    method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 
     method eval_cjmp_targ: int64 ->  int64  ->  D.t  ->  Vine.exp  ->  bool
     method eval_cjmp_cond: Vine.exp ->  D.t * Vine.exp
