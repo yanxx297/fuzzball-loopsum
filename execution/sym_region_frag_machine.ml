@@ -1180,7 +1180,7 @@ struct
           | _ -> (None, None, V.NEQ))
       in
       let b = self#eval_cjmp_targ targ1 targ2 v e in 
-        (match spfm#loop_heur targ1 targ2 with
+        (match spfm#is_guard targ1 targ2 with
           | (true, targ) -> (
               (*targ' : real targ choosen by cjmp_choose*)
               (*targ : the in-loop targ*)

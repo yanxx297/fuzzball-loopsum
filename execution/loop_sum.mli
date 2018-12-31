@@ -28,7 +28,6 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method is_gt_cond : Vine.exp -> bool
   method print_ec : unit
   method print_ivt : unit
-  method get_heur : bool
   method compute_lss : int64 -> ((int64 * Vine.exp) list -> unit) -> unit
   method get_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list
   method set_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list -> unit
@@ -59,7 +58,6 @@ class dynamic_cfg : int64 -> object
   method is_gt_cond : Vine.exp -> bool
   method make_snap : unit
   method reset_snap : unit
-  method use_heur : bool
   method check_loopsum : int64 ->
     (Vine.exp -> bool) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->

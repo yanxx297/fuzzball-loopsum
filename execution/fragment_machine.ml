@@ -541,7 +541,7 @@ class virtual fragment_machine = object
   method virtual set_start_eip : int64 -> unit
   method virtual get_stmt : V.stmt list 
   method virtual set_text_range : int64 -> int64 -> unit
-  method virtual loop_heur : int64 -> int64 -> bool * int64
+  method virtual is_guard : int64 -> int64 -> bool * int64
   method virtual branch_heur : int64 -> int64 -> int64 option
   method virtual in_loop : int64 -> bool
   method virtual get_loop_head : int64
@@ -653,17 +653,15 @@ struct
     val dcfgs = Hashtbl.create 100
     val mutable current_dcfg = None	
 
-    (* Heuristics based on Statically-Directed Dynamic Automated Test Generation? *)
     (**res = (is_guard?, in_loop_targ)*)
-    method loop_heur t_eip f_eip = 
+    method is_guard t_eip f_eip = 
       let res = match current_dcfg with
         | None -> (false, -1L)
-        | Some dcfg -> (
-            let use_heur = dcfg#use_heur in (
-              match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
-                | (true, false) -> (true, (if use_heur then t_eip else -1L))
-                | (false, true) -> (true, (if use_heur then f_eip else -1L))
-                | _ -> (false, -1L)))
+        | Some dcfg -> 
+            (match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
+               | (true, false) -> (true, t_eip)
+               | (false, true) -> (true, f_eip)
+               | _ -> (false, -1L))
       in
         res
 

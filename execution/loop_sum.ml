@@ -160,7 +160,6 @@ class loop_record tail head g= object(self)
   (* A loop record is identified by the dest of the backedge *)
   val id = head
   val loop_body = Hashtbl.create 100
-  val mutable force_heur = true
 
   (* lss(loopsum set): (enter_cond, exit_cond) *)
   (* enter_cond = precond && branch conditions *)
@@ -191,8 +190,6 @@ class loop_record tail head g= object(self)
     loopsum_status <- None
   (**If we clear up LS set after each updating, we must also remove the corresponding decision sub-tree*)
   (*lss <- []*))
-
-  method get_heur = force_heur
 
   method get_loop_body = loop_body
 
@@ -565,10 +562,10 @@ class loop_record tail head g= object(self)
                           | _ -> (None, None, None)) 
                      in
                        (match (dist_opt, dD_opt, eCount_opt) with
-                          | (Some dist, Some dD, Some eCount) -> ( 
-                              Printf.printf "%s\n" (V.exp_to_string dD);
-                              self#replace_g (addr, eCount_opt, op, ty, d0_opt, dist_opt, dist_opt, dD_opt, eeip);
-                          (*if self#get_iter >= 3 then force_heur <- false*))
+                          | (Some dist, Some dD, Some eCount) -> 
+                              (Printf.printf "%s\n" (V.exp_to_string dD);
+                               self#replace_g (addr, eCount_opt, op, ty, d0_opt, dist_opt, dist_opt, dD_opt, eeip);
+                              )
                           | _  -> ());
                        if !opt_trace_gt then 
                          (let d_str = 
@@ -828,19 +825,6 @@ class dynamic_cfg (eip : int64) = object(self)
                | _ -> failwith "")
       | (None, _, _) -> (Printf.eprintf "cur_ls_node is empty\n")
  *)
-
-  method use_heur = 
-    let loop = self#get_current_loop in
-      match loop with
-        | None -> false
-        | Some l -> (
-            match l#get_status with
-              | Some false -> true
-              | None -> 
-                  (if l#get_lss != [] then 
-                     false
-                   else l#get_heur)
-              | _ -> l#get_heur)
 
   method get_loop_head = 
     let loop = self#get_current_loop in
