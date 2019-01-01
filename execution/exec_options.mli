@@ -269,6 +269,7 @@ val opt_single_weirdness_threshold : int ref
 val opt_stop_on_error_msgs : string list ref
 val opt_error_msg_threshold : int option ref
 
+val opt_use_loopsum : bool ref
 val opt_trace_loopsum : bool ref
 val opt_trace_loop : bool ref
 val opt_trace_ivt : bool ref

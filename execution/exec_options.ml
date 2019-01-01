@@ -331,6 +331,7 @@ let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None
 
+let opt_use_loopsum = ref false
 let opt_trace_loopsum = ref false
 let opt_trace_loop = ref false
 let opt_trace_ivt = ref false

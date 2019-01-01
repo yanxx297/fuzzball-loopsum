@@ -523,6 +523,12 @@ let cmdline_opts =
      " Trace the pre-condition computed by loop sum");
     ("-trace-postcond", Arg.Set(opt_trace_postcond),
      " Trace the post-condition computed by loop sum");
+    ("-use-loopsum",
+     (Arg.Unit
+        (fun () ->
+           opt_use_loopsum := true;
+           opt_trace_callstack := true;)),
+     " Turn on loop summarization");
     ("-trace-loopsum",
      (Arg.Unit
 	(fun () ->

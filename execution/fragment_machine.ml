@@ -1037,7 +1037,7 @@ struct
 	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
 	  | _ -> false 
         do
-          reset_dcfg (List.hd call_stack);
+          if !opt_use_loopsum then reset_dcfg (List.hd call_stack);
           call_stack <- List.tl call_stack
         done
       in
@@ -1078,35 +1078,35 @@ struct
 	      (* TODO: add similar parsing for ARM mnemonics *)
 	      "not a jump"
       in
-	let switch_dcfg eip = 
-		let next_dcfg = Hashtbl.find dcfgs eip in
-		if current_dcfg != next_dcfg 
-                then (
-                  current_dcfg <- next_dcfg)
-	in
-	match kind with
-	  | "call" ->
-	      let esp = self#get_esp in
-	      let (*depth = List.length call_stack and*)
-		  ret_addr = get_retaddr esp
-	      in
-		(*for i = 0 to depth - 1 do Printf.eprintf " " done;
-		Printf.eprintf
-		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
-		  last_eip eip ret_addr;*)
-		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
-		if not (Hashtbl.mem dcfgs eip)
-		then (
-			let dcfg = new dynamic_cfg eip in
-			Hashtbl.replace dcfgs eip (Some dcfg);
-			);
-		switch_dcfg eip;
-		(* If we had a command-line option for expensive sanity
-		   checks, we could use it here. For now, just comment it
-		   out: *)
-		if false then
-		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-	  | "return" ->
+     let switch_dcfg eip = 
+        let next_dcfg = Hashtbl.find dcfgs eip in
+          if current_dcfg != next_dcfg 
+          then (
+            current_dcfg <- next_dcfg)
+      in
+        match kind with
+          | "call" ->
+              let esp = self#get_esp in
+              let (*depth = List.length call_stack and*) ret_addr = get_retaddr esp
+              in
+                (*for i = 0 to depth - 1 do Printf.eprintf " " done;
+                 Printf.eprintf
+                 "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
+                 last_eip eip ret_addr;*)
+                call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+                if !opt_use_loopsum then
+                  (if not (Hashtbl.mem dcfgs eip)
+                   then (
+                     let dcfg = new dynamic_cfg eip in
+                       Hashtbl.replace dcfgs eip (Some dcfg);
+                   );
+                   switch_dcfg eip);
+                (* If we had a command-line option for expensive sanity
+                 checks, we could use it here. For now, just comment it
+                 out: *)
+                if false then
+                  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
+          | "return" ->
               let esp = self#get_esp in
                 pop_callstack (Int64.sub esp size);
                 if false then
@@ -1119,7 +1119,7 @@ struct
                 if false then
                   g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
                 (*switch dcfg*)
-                if List.length call_stack != 0 then (
+                if !opt_use_loopsum && List.length call_stack != 0 then (
                   let (_, last, eip, _) = List.hd call_stack in
                     if Hashtbl.mem dcfgs eip
                     then (
@@ -1128,7 +1128,7 @@ struct
                     )
                     else failwith "attempt to access an unknown activation" 
                 );
-	  | _ -> ()
+          | _ -> ()
 
     method jump_hook last_insn last_eip eip =
       (* I think this might be the right place to add the indirect table updates

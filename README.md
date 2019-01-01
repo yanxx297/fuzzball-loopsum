@@ -43,13 +43,13 @@ http://groups.google.com/group/bitblaze-users
 Currently we cannot compile bytecode FuzzBALL because recent change in OCaml break it.
 As a workaround, we turn off warning errors.
 Note that for now we still need to rerun the last command with additional option added.
-See commit 3bbe3a5c06b16663bbfe099a2adb5a932616a28e for more details.
+See commit [3bbe3a5](https://github.com/yanxx297/fuzzball-loopsum/commit/3bbe3a5c06b16663bbfe099a2adb5a932616a28e) for more details.
 
 ### Test Loop Summarization
 ```bash
-../../exec_utils/fuzzball -trace-loop -trace-decisions -trace-iterations -trace-conditions \
--trace-callstack -trace-loopsum -trace-ivt -trace-gt -fuzz-start-addr 0x8048553 \
--fuzz-end-addr 0x5006f63a -solver smtlib -solver-path ../../../lib/z3/build/z3 \
+../../exec_utils/fuzzball -use-loopsum -trace-loop -trace-decisions -trace-iterations \ 
+-trace-conditions -trace-loopsum -fuzz-start-addr 0x8048553 -fuzz-end-addr 0x5006f63a \
+-solver smtlib -solver-path ../../../lib/z3/build/z3 \
 -linux-syscalls -skip-call-ret-symbol 0x8048598=n -trace-stopping \
 input-dependent -- ./input-dependent 0
 # -fuzz-start-addr          the first instruction of main()
@@ -59,6 +59,14 @@ input-dependent -- ./input-dependent 0
 # -skip-call-ret-symbol     The eip of an atoi that transform string format input
 #                           to an integer.        
 ```
+### Decision Tree Visualization
+FuzzBALL writes the decision tree in dot format when it stops. 
+The dot file is stored at /tmp/bdt_graph by default.
+You can convert the file to pdf by running the command bellow.
+```bash
+dot -Tpdf /tmp/bdt_graph -o /tmp/bdt.pdf
+```
+
 ## Reference
 <a name="footnote1">[1]</a>
 Patrice Godefroid and Daniel Luchaup. Automatic partial loop summarization in
