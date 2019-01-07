@@ -390,8 +390,8 @@ class loop_record tail head g= object(self)
                                 V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
                         V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
               in 
-                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
-                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
+                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond));
+                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond));
                 if check_cond loop_cond then
                   if check_cond iof_cond then None
                   else if (Hashtbl.mem iof_cache addr) then
@@ -409,8 +409,8 @@ class loop_record tail head g= object(self)
                                 V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
                         V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
               in 
-                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func ty loop_cond));
-                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func ty iof_cond));
+                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond));
+                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond));
                 if check_cond loop_cond then
                   if check_cond iof_cond then None
                   else if (Hashtbl.mem iof_cache addr) then
