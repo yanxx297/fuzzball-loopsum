@@ -792,37 +792,43 @@ class dynamic_cfg (eip : int64) = object(self)
   (* To handle nested loops, track the current loop with a stack *)
   (* Each element is the id of a loop *)
   val mutable loopstack = Stack.create ()
-  val mutable loopstack_snap = Stack.create () 
+  val mutable loopstack_snap = Stack.create ()
 
   (* A full List of loops in current subroutine*)
   (* Hashtbl loop head -> loop record *)
   val mutable looplist = Hashtbl.create 10	
                          
-  (* Check whether the subtree of current loopsum is all_seen *)
-  (* If all_seen, turn it off in lss *)
-(*
-  method mark_all_seen_loopsum (is_all_seen: int -> bool) =
-    match cur_ls_node with
-      | (Some ident, id, hd) ->
-          assert(id != -1 && hd != -1L);
-          if is_all_seen ident then 
-            Printf.eprintf "Node %d(%d) is all_seen\n" ident id
-          else
-            Printf.eprintf "Node %d(%d) is not all_seen\n" ident id;
-          let l = Hashtbl.find_opt looplist hd in
-            (match l with
-               | Some loop -> 
-                   (let lss = loop#get_lss in
-                      loop#set_lss 
-                        (List.mapi (fun i x -> 
-                                      if i = id then 
-                                        let (enter_cond, exit_cond, _ ) = x in 
-                                          (enter_cond, exit_cond, true)
-                                          else x
-                        ) lss))
-               | _ -> failwith "")
-      | (None, _, _) -> (Printf.eprintf "cur_ls_node is empty\n")
- *)
+  (* Check the all_seen status of loops on current path *)
+  (* If all the true subtrees of loopsums and the false subtree of useLoopsum*) 
+  (* are all_seen, then mark the false side of last loopsum to all_seen*)
+  method mark_extra_all_seen (loop_enter_nodes: (int * loop_record option) list)  
+                           mark_all_seen (is_all_seen: int -> bool) get_t_child
+                           get_f_child =
+    let rec mark_loopsum_all_seen num node id = 
+      (Printf.eprintf "At node %d, check loopsum %d/%d\n" node id num;
+       let mark_last_all_seen cur = 
+         (Printf.eprintf "mark_loopsum_all_seen: check node %d\n" cur;
+           let t_child = get_t_child cur in
+            if not (t_child = -1) then
+              (if id = (num - 1) then
+                 (Printf.eprintf "Node %d is the last loopsum(ls[%d]), mark it to all_seen\n" cur id;
+                  mark_all_seen (get_f_child cur))
+               else if (is_all_seen t_child) then
+                 mark_loopsum_all_seen num (get_f_child cur) (id+1)
+              )
+         )
+       in
+         mark_last_all_seen node)
+    in
+      Printf.eprintf "Current path covered %d loops\n" (List.length loop_enter_nodes);
+      List.iter (fun (node, loop_opt) ->
+                   match loop_opt with
+                     | Some loop -> 
+                         if is_all_seen (get_f_child node) then
+                           let num = List.length (loop#get_lss) in
+                             mark_loopsum_all_seen num (get_t_child node) 0
+                     | None -> Printf.eprintf "Invalid loop head\n"
+      ) loop_enter_nodes
 
   method get_loop_head = 
     let loop = self#get_current_loop in
@@ -1025,7 +1031,7 @@ class dynamic_cfg (eip : int64) = object(self)
   (*TODO: loopsum preconds should be add to path cond*)
   method check_loopsum eip check (s_func:Vine.typ -> Vine.exp -> Vine.exp) 
         try_ext (random_bit:bool) (is_all_seen: int -> bool) (cur_ident: int) 
-        get_t_child get_f_child = (
+        get_t_child get_f_child (add_loopsum_node: int * loop_record option -> unit) = (
     let curr_loop = self#get_current_loop in
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
@@ -1068,12 +1074,14 @@ class dynamic_cfg (eip : int64) = object(self)
               *)
              else false
          in
-         let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
-         in
-           if res then
-             Printf.eprintf "Decide to use loopsum\n"
-           else Printf.eprintf "Decide not to use loopsum\n";
-           res
+           add_loopsum_node (cur_ident, self#get_current_loop);
+           let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
+           in
+             Printf.eprintf "Add node %d to loop_enter_nodes\n" cur_ident;
+             if res then
+               Printf.eprintf "Decide to use loopsum\n"
+             else Printf.eprintf "Decide not to use loopsum\n";
+             res
         )
       in
       let choose_loopsum l =

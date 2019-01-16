@@ -302,6 +302,8 @@ sig
       	 (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
     	bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
     	(int64 * Vine.exp) list * int64
+    method mark_extra_all_seen : (int -> unit) ->
+        (int -> bool) -> (int -> int) -> (int -> int) -> unit
     method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 
     method eval_cjmp_targ: int64 ->  int64  ->  D.t  ->  Vine.exp  ->  bool

@@ -36,6 +36,7 @@ class linear_decision_tree : object
   method set_heur : int -> unit
   method heur_preference : bool option
   method mark_all_seen : unit
+  method mark_all_seen_ident : int -> unit
   method cur_ident : int
   method is_all_seen : int -> bool
   method get_f_child: int -> int 

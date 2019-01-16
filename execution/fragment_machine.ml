@@ -563,7 +563,8 @@ class virtual fragment_machine = object
       (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
     bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
     (int64 * Vine.exp) list * int64
-
+  method virtual mark_extra_all_seen : (int -> unit) ->
+    (int -> bool) -> (int -> int) -> (int -> int) -> unit
   method virtual schedule_proc : unit
   method virtual maybe_switch_proc : int64 -> int64 option
   method virtual alloc_proc : (unit -> unit) -> unit
@@ -740,7 +741,19 @@ struct
     method check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child = 
       match current_dcfg with
         | None -> ([], 0L)
-        | Some g -> g#check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child
+        | Some g -> g#check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child self#add_loopsum_node
+
+    (* A stack of useLoopsum? nodes on current path*)
+    val mutable loop_enter_nodes = []
+    val mutable snap_loop_enter_nodes = []
+
+    method mark_extra_all_seen mark_all_seen is_all_seen get_t_child get_f_child = 
+      (match current_dcfg with
+         | None -> ()
+         | Some g -> (g#mark_extra_all_seen loop_enter_nodes mark_all_seen is_all_seen get_t_child get_f_child))
+
+    method private add_loopsum_node n = 
+      loop_enter_nodes <- n::loop_enter_nodes
 
     method simplify_exp typ e = e
 
@@ -2102,6 +2115,7 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       snap_dcfg <- current_dcfg;
       snap_call_stack <- call_stack;
+      snap_loop_enter_nodes <- loop_enter_nodes;
       (match current_dcfg with
 	| None -> ()
 	| Some dcfg -> dcfg#make_snap);
@@ -2158,6 +2172,7 @@ struct
         List.iter 
           (fun (esp, last_eip, eip, ret_addr) -> 
              Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
+        loop_enter_nodes <- snap_loop_enter_nodes;
         (*match (current_dcfg, snap_dcfg) with
          | (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
          | _ -> (Printf.printf "reset: /_>");*)

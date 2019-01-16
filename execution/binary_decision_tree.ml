@@ -889,6 +889,12 @@ class binary_decision_tree = object(self)
 	Printf.eprintf "DT: Mark_all_seen at %d\n" node.ident;
       loop node
 
+  method mark_all_seen_ident ident =
+    if ident >= 0 then
+      Printf.eprintf "mark extra node %d to all_seen\n" ident;
+      let node = ident_to_node ident in
+        self#mark_all_seen_node node
+
   method private maybe_mark_all_seen_node n =
     if !opt_trace_decision_tree then	
       Printf.eprintf "DT: maybe_mark_all_seen_node at %d\n" n.ident;

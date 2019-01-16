@@ -325,6 +325,8 @@ class virtual fragment_machine : object
       (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
     bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
     (int64 * Vine.exp) list * int64
+  method virtual mark_extra_all_seen : (int -> unit) ->
+    (int -> bool) -> (int -> int) -> (int -> int) -> unit
 	
   method virtual schedule_proc : unit
   method virtual alloc_proc : (unit -> unit) -> unit
@@ -626,6 +628,8 @@ sig
          (unit -> bool) -> (bool -> bool) -> int -> bool) ->
         bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
         (int64 * Vine.exp) list * int64
+    method mark_extra_all_seen : (int -> unit) ->
+        (int -> bool) -> (int -> int) -> (int -> int) -> unit
     method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 
     method print_dt : unit

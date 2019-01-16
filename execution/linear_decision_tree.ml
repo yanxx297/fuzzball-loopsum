@@ -82,6 +82,7 @@ class linear_decision_tree = object(self)
   method set_heur i = ()
   method heur_preference = (None : bool option)
   method mark_all_seen = ()
+  method mark_all_seen_ident ident = ()
   method is_all_seen ident = false
   method get_f_child ident = -1
   method get_t_child ident = -1

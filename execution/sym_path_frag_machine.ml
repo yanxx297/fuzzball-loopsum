@@ -988,6 +988,7 @@ struct
       dt#set_heur 1;
       dt#viz_tree;
       dt#mark_all_seen;
+      fm#mark_extra_all_seen dt#mark_all_seen_ident dt#is_all_seen dt#get_t_child dt#get_f_child;
       infl_man#finish_path;
       if !opt_trace_binary_paths then
 	Printf.eprintf "Path: %s\n" dt#get_hist_str;

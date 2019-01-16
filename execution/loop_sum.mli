@@ -66,8 +66,11 @@ class dynamic_cfg : int64 -> object
       (bool -> unit) ->
       (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
     bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
+    (int * loop_record option -> unit) ->
     (int64 * Vine.exp) list * int64
   method get_lss: (Vine.exp * (Vine.exp * (int64 * Vine.exp) list * int64) list) list
   method add_bd : int64 -> Vine.exp -> int64 -> unit
   method check_bt : int64 -> (Vine.exp * int64) option
+  method mark_extra_all_seen : (int * loop_record option) list -> (int -> unit) ->
+    (int -> bool) -> (int -> int) -> (int -> int) -> unit
 end
