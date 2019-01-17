@@ -1041,7 +1041,7 @@ struct
           try
             let g = Hashtbl.find dcfgs eip in
               (match g with
-                 | Some dcfg -> dcfg#reset_snap
+                 | Some dcfg -> dcfg#reset
                  | _ -> ())
           with
             | Not_found -> ()
@@ -2165,6 +2165,9 @@ struct
         fuzz_finish_reasons <- [];
         disqualified <- false;
         current_dcfg <- snap_dcfg;
+        match current_dcfg with
+          | None -> ()
+          | Some g -> g#reset_snap;
         List.iter 
           (fun (esp, last_eip, eip, ret_addr) -> 
              Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
