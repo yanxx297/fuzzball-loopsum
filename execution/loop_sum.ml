@@ -1093,8 +1093,10 @@ class dynamic_cfg (eip : int64) = object(self)
                         let (_, vt, eeip) = List.nth postcond 0 in
                           if check precond then feasible := (id, vt, eeip)::!feasible
           ) l;
-          let n = Random.int (List.length !feasible) in
-            List.nth !feasible n
+          let all = List.length !feasible in
+            if all <= 0 then failwith "Inconsistency between use_loopsum and choose_loopsum\n";
+            let n = Random.int all in
+              List.nth !feasible n
       in
       let extend_with_loopsum l id =
         let true_bit () = true in
