@@ -2116,10 +2116,12 @@ struct
       snap_dcfg <- current_dcfg;
       snap_call_stack <- call_stack;
       snap_loop_enter_nodes <- loop_enter_nodes;
-      (match current_dcfg with
-	| None -> ()
-	| Some dcfg -> dcfg#make_snap);
-	List.iter snap_handler !special_handler_list_ref
+      Hashtbl.iter (fun hd g ->
+                      match g with
+                        | None -> ()
+                        | Some dcfg -> dcfg#make_snap
+      ) dcfgs;
+      List.iter snap_handler !special_handler_list_ref
 
     val mutable fuzz_finish_reasons = []
     val mutable reason_warned = false
@@ -2165,16 +2167,20 @@ struct
         fuzz_finish_reasons <- [];
         disqualified <- false;
         current_dcfg <- snap_dcfg;
-        match current_dcfg with
-          | None -> ()
-          | Some g -> g#reset_snap;
+        Hashtbl.iter (fun hd g ->
+                        match g with
+                          | None -> ()
+                          | Some dcfg -> dcfg#reset_snap
+        ) dcfgs;
         List.iter 
           (fun (esp, last_eip, eip, ret_addr) -> 
-             Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
+             Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
+          ) call_stack;
         call_stack <- snap_call_stack;
         List.iter 
           (fun (esp, last_eip, eip, ret_addr) -> 
-             Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr) call_stack;
+             Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
+          ) call_stack;
         loop_enter_nodes <- snap_loop_enter_nodes;
         (*match (current_dcfg, snap_dcfg) with
          | (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
