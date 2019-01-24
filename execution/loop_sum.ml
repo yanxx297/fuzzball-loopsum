@@ -129,7 +129,6 @@ class simple_graph (h: int64) = object(self)
   method reset =
     Printf.eprintf "Reset graph\n";
     domin <- DS.empty;
-    full_dom <- DS.empty;
     let reset_node e n = 
       match n with
         | Some node -> node#set_domin DS.empty
@@ -147,7 +146,7 @@ class simple_graph (h: int64) = object(self)
   method reset_snap =
     let reset_node e n = 
       match n with
-        | Some node -> node#make_snap
+        | Some node -> node#reset_snap
         | None -> ()
     in
       Hashtbl.iter reset_node nodes;
