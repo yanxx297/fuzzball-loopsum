@@ -160,6 +160,12 @@ class loop_record tail head g= object(self)
   val id = head
   val loop_body = Hashtbl.create 100
 
+  (* Branch table: (branch_eip(int64), cond(exp), current_decision(int64))
+   collect branch conditions in loop and use them to 
+   compute pre conditions.*)
+  val mutable bt = Hashtbl.create 10		
+  val mutable snap_bt = Hashtbl.create 10	
+
   (* lss(loopsum set): (enter_cond, exit_cond) *)
   (* enter_cond = precond && branch conditions *)
   (* exit_cond = (precond, VT, exit_eip) *)
@@ -228,10 +234,12 @@ class loop_record tail head g= object(self)
     self#clean_bt      
 
   method make_snap =
+    snap_bt <- bt;
     iter_snap <- iter;
     loopsum_status_snap <- loopsum_status
 
   method reset_snap =
+    bt <- snap_bt;
     iter <- iter_snap;
     loopsum_status <- loopsum_status_snap
 
@@ -620,13 +628,9 @@ class loop_record tail head g= object(self)
     if !opt_trace_gt then Printf.eprintf "clean GT of 0x%08Lx\n" id;
     gt <- [] 
 
-  (* Branch table: (branch_eip(int64), cond(exp), current_decision(int64))
-   collect branch conditions in loop and use them to 
-   compute pre conditions.*)
-  val mutable bt = Hashtbl.create 10		
 
   method add_bd (eip:int64) (e: V.exp) (d:int64) = (
-(*     Printf.eprintf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); *)
+    Printf.eprintf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); 
     Hashtbl.replace bt eip (e, d))
 
   method check_bt eip = (
