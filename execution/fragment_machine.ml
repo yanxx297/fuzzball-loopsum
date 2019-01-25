@@ -979,11 +979,12 @@ struct
             | None -> ()
             | Some dcfg -> 
                 if eip >= text_start && eip <= text_end then ( 
+                  let msg = ref "" in
                   let apply l = (
                     match l with
                       | h::l' -> (
                           let (addr, exp) = h in 
-                            if !opt_trace_postcond then Printf.printf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
+                            msg :=  !msg ^ Printf.sprintf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
                             let ty = Vine_typecheck.infer_type_fast exp in 
                             let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
                               self#store_exp addr exp' ty)
@@ -991,8 +992,10 @@ struct
                   in
                     match dcfg#add_node eip apply with
                       | ExitLoop -> (				
-                          if !opt_trace_postcond then 
-                            Printf.printf "*************************************** Post-cond *************************************** \n";
+                          if !opt_trace_postcond && not (!msg = "") then 
+                            (Printf.eprintf "* Post condition:\n";
+                             Printf.eprintf "%s" !msg
+                            )
                         )
                       |_ -> ()));
       List.iter apply_eip_hook extra_eip_hooks;
@@ -2009,15 +2012,14 @@ struct
 	| X64 -> self#simplify_x64_regs
 	| ARM -> self#simplify_arm_regs
 
-	method store_exp addr e ty = (
-		Printf.printf "store_exp: mem[0x%08Lx] <- %s\n" addr (V.exp_to_string e);
-		let e' = D.from_symbolic e in
-		match ty with
-		| V.REG_8 -> self#store_byte addr e'
-		| V.REG_16 -> self#store_short addr e'
-		| V.REG_32 -> self#store_word addr e'
-		| V.REG_64 -> self#store_long addr e'
-		| _ -> ())
+    method store_exp addr e ty = (
+      let e' = D.from_symbolic e in
+        match ty with
+          | V.REG_8 -> self#store_byte addr e'
+          | V.REG_16 -> self#store_short addr e'
+          | V.REG_32 -> self#store_word addr e'
+          | V.REG_64 -> self#store_long addr e'
+          | _ -> ())
 
     method store_byte ?(prov = Interval_tree.Internal) addr b = 
 	mem#store_byte ~prov addr b;
@@ -2172,15 +2174,17 @@ struct
                           | None -> ()
                           | Some dcfg -> dcfg#reset_snap
         ) dcfgs;
-        List.iter 
-          (fun (esp, last_eip, eip, ret_addr) -> 
-             Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
-          ) call_stack;
+        if !opt_trace_loopsum_detailed then
+          List.iter 
+            (fun (esp, last_eip, eip, ret_addr) -> 
+               Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
+            ) call_stack;
         call_stack <- snap_call_stack;
-        List.iter 
-          (fun (esp, last_eip, eip, ret_addr) -> 
-             Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
-          ) call_stack;
+        if !opt_trace_loopsum_detailed then
+          List.iter 
+            (fun (esp, last_eip, eip, ret_addr) -> 
+               Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
+            ) call_stack;
         loop_enter_nodes <- snap_loop_enter_nodes;
         (*match (current_dcfg, snap_dcfg) with
          | (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))

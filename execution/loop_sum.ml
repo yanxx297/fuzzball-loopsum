@@ -95,7 +95,8 @@ class simple_graph (h: int64) = object(self)
     let node = new simple_node id in
       Hashtbl.replace nodes id (Some node);
       full_dom <- DS.add id full_dom;
-      Printf.eprintf "Add %Lx to graph %Lx\n" id head
+      if !opt_trace_loop_detailed then
+        Printf.eprintf "Add %Lx to graph %Lx\n" id head
 
   method add_edge tail head =
     if not (Hashtbl.mem nodes tail) then 
@@ -127,7 +128,6 @@ class simple_graph (h: int64) = object(self)
       res
 
   method reset =
-    Printf.eprintf "Reset graph\n";
     domin <- DS.empty;
     let reset_node e n = 
       match n with
@@ -185,10 +185,11 @@ class loop_record tail head g= object(self)
   method get_status = loopsum_status
  
   method set_status opt = (
-    Printf.eprintf "set use_loopsum to %s\n" 
-      (match opt with
-         | Some b -> Printf.sprintf "%B" b
-         | None -> "None");
+    if !opt_trace_loopsum_detailed then
+      Printf.eprintf "set use_loopsum to %s\n" 
+        (match opt with
+           | Some b -> Printf.sprintf "%B" b
+           | None -> "None");
     loopsum_status <- opt)
 
   method update_loopsum = (
@@ -219,7 +220,7 @@ class loop_record tail head g= object(self)
   method inc_iter = 
     iter <- (iter + 1);
     if !opt_trace_loop then (
-      Printf.eprintf "***************************************************************************************************\n";
+      Printf.eprintf "----------------------------------------------------------------------------\n";
       Printf.eprintf "iter [+1] : %d\n" iter)
 
   method get_iter = iter
@@ -269,11 +270,11 @@ class loop_record tail head g= object(self)
                 | None -> self#replace_iv (addr, V.BinOp(V.MINUS, v0, dv'), v', v', Some dv')
                 | Some dv -> (
                     let cond = V.BinOp(V.EQ, dv, dv') in
-                      if !opt_trace_ivt then 
-                        Printf.eprintf "iv cond: %s \n" (V.exp_to_string cond);
+                      if !opt_trace_loopsum_detailed then 
+                        Printf.eprintf "iv cond (full): %s \n" (V.exp_to_string cond);
                       let cond' = simplify_cond s_func cond in
                         (if !opt_trace_ivt then 
-                           Printf.eprintf "Simplify: %s -> %s \n" (V.exp_to_string cond) (V.exp_to_string cond');
+                           Printf.eprintf "IV cond (simplified): %s \n" (V.exp_to_string cond');
                          match cond' with
                            | V.Constant(V.Int(V.REG_1, 1L)) -> ()
                            | V.Constant(V.Int(V.REG_1, 0L)) -> self#clean_ivt
@@ -293,7 +294,7 @@ class loop_record tail head g= object(self)
 
   method in_loop eip = 
     let res = Hashtbl.mem loop_body eip in
-      if !opt_trace_loop then
+      if !opt_trace_loop_detailed then
         (match res with
            | true -> (Printf.eprintf "0x%08Lx is in the loop <0x%08Lx>\n" eip id)
            | false  -> (Printf.eprintf "0x%08Lx is not in the loop <0x%08Lx>\n" eip id));
@@ -382,6 +383,7 @@ class loop_record tail head g= object(self)
     (* loop_cond := if true, stay in the loop*) 
     (* iof_cond = lhs>0 && rhs<0 && lhs-rhs<lhs; if true, integer overflow can happen when computing D*)
     (**TODO: handle IOF while computing D = lhs - rhs, when lhs >0 and rhs <0*)
+    let msg = ref "" in
     let exp = 
       (match op' with
          | V.EQ -> 
@@ -397,8 +399,8 @@ class loop_record tail head g= object(self)
                                 V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
                         V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
               in 
-                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond));
-                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond));
+                msg := !msg ^ (Printf.sprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond)));
+                msg := !msg ^ (Printf.sprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond)));
                 if check_cond loop_cond then
                   if check_cond iof_cond then None
                   else if (Hashtbl.mem iof_cache addr) then
@@ -416,8 +418,8 @@ class loop_record tail head g= object(self)
                                 V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), lhs)), 
                         V.BinOp(V.SLT, V.BinOp(V.MINUS, lhs, rhs), lhs)) 
               in 
-                Printf.eprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond));
-                Printf.eprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond));
+                msg := !msg ^ (Printf.sprintf "add_g: loop_cond %s\n" (V.exp_to_string (s_func V.REG_1 loop_cond)));
+                msg := !msg ^ (Printf.sprintf "add_g: iof_cond %s\n" (V.exp_to_string (s_func V.REG_1 iof_cond)));
                 if check_cond loop_cond then
                   if check_cond iof_cond then None
                   else if (Hashtbl.mem iof_cache addr) then
@@ -438,13 +440,17 @@ class loop_record tail head g= object(self)
          | _  -> None
       ) 
     in
+      if !opt_trace_loopsum_detailed then Printf.eprintf "%s" !msg;
+      let msg = ref "" in
       (*For each case, compute dd, check IOF according to D and dd, compute EC if not yet*)
       (*check whether dd' = dd, and then copy D' to D at the end*)
       (match exp with
-         | None -> (Printf.eprintf "add_g: fail to compute D\n")
+         | None -> 
+             (Printf.eprintf "add_g: fail to compute D\n")
          | Some e -> (
              match self#gt_search addr with
                | Some g -> (
+                   let msg = ref "" in
                    let (_, ec, op, _, d0_opt, d_opt, d_opt', dd_opt, eeip) = g in
                      if not (d_opt' = exp) then self#replace_g (addr, ec, op, ty, d0_opt, d_opt, exp, dd_opt, eeip);
                      let (dist_opt, dD_opt, eCount_opt) = 
@@ -456,10 +462,10 @@ class loop_record tail head g= object(self)
                                       let cond1 = V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d')
                                       and cond2 = V.BinOp(V.SLT, dd', V.Constant(V.Int(ty, 0L))) in
                                         if !opt_trace_gt then 
-                                          (Printf.eprintf "dd = %s\n" (V.exp_to_string (V.BinOp(V.MINUS, d', d)));
-                                           Printf.eprintf "dd' = %s\n" (V.exp_to_string dd');
-                                           Printf.eprintf "cond1 = %s\n" (V.exp_to_string cond1);
-                                           Printf.eprintf "cond2 =  %s\n" (V.exp_to_string cond2));
+                                          (msg := !msg ^ (Printf.sprintf "dd = %s\n" (V.exp_to_string (V.BinOp(V.MINUS, d', d))));
+                                           msg := !msg ^ (Printf.sprintf "dd' = %s\n" (V.exp_to_string dd'));
+                                           msg := !msg ^ (Printf.sprintf "cond1 = %s\n" (V.exp_to_string cond1));
+                                           msg := !msg ^ (Printf.sprintf "cond2 =  %s\n" (V.exp_to_string cond2)));
                                         match ((check_cond cond1), (check_cond cond2)) with
                                           | (true, true) -> 
                                               (*D>0 && d<0*)
@@ -467,7 +473,7 @@ class loop_record tail head g= object(self)
                                           | (true, false) -> (
                                               (*integer overflow: D>0 && d>=0*)
                                               Hashtbl.replace iof_cache addr ();
-                                              Printf.eprintf "Int Overflow!!!\n";
+                                              msg := !msg ^ (Printf.sprintf "Int Overflow!!!\n");
                                               let iof_d = s_func ty (V.BinOp(V.MINUS, V.Constant(V.Int(ty, self#get_min_s ty)), lhs)) in
                                               let iof_dd = s_func ty (V.UnOp(V.NEG, dd')) in
                                               let iof_d' = (V.BinOp(V.MINUS, iof_d, iof_dd)) in
@@ -552,16 +558,16 @@ class loop_record tail head g= object(self)
                                                      | (true, true)
                                                      | (true, false) -> 
                                                          (*If Both situations are possible, take the (D > 0, d < 0) case first*)
-                                                         (Printf.eprintf "default EQ\n";
+                                                         (msg := !msg ^ (Printf.sprintf "default EQ\n");
                                                           (Some d', Some dd',(compute_ec op d'(V.UnOp(V.NEG, dd')) addr)))
                                                      | (false, true) -> 
-                                                         (Printf.eprintf "inverse EQ\n";
+                                                         (msg := !msg ^ (Printf.sprintf "inverse EQ\n");
                                                           (Some d', Some dd', (compute_ec op (V.UnOp(V.NEG, d')) dd' addr)))
                                                      | _ -> 
                                                          (** TODO: Handle integer overflow (dD and D on the same direction)*)
                                                          (None, None, None)))
                                              else
-                                               (Printf.eprintf "dd' = 0: Infinity loop\n";
+                                               (msg := !msg ^ (Printf.sprintf "dd' = 0: Infinity loop\n");
                                                 (None, None, None))
                                           )
                                         else (None, None, None))
@@ -570,7 +576,7 @@ class loop_record tail head g= object(self)
                      in
                        (match (dist_opt, dD_opt, eCount_opt) with
                           | (Some dist, Some dD, Some eCount) -> 
-                              (Printf.eprintf "%s\n" (V.exp_to_string dD);
+                              (msg := !msg ^ (Printf.sprintf "%s\n" (V.exp_to_string dD));
                                self#replace_g (addr, eCount_opt, op, ty, d0_opt, dist_opt, dist_opt, dD_opt, eeip);
                               )
                           | _  -> ());
@@ -580,12 +586,18 @@ class loop_record tail head g= object(self)
                                | None -> "<None>"
                                | Some d -> (V.exp_to_string d)) 
                           in
-                            Printf.eprintf "add_g: replace %s with %s at 0x%08Lx\n" d_str (V.exp_to_string e) addr)
+                            msg := !msg ^ (Printf.sprintf "add_g: replace %s with %s at 0x%08Lx\n" d_str (V.exp_to_string e) addr);
+                            if !opt_trace_loopsum_detailed then Printf.eprintf "%s" !msg
+                         )
                  )
                | None -> (
                    if iter = 2 then (
                      gt <- gt @ [(addr, None, op', ty, exp, exp, exp, None, eeip)];
-                     if !opt_trace_gt then Printf.eprintf "add_g: Store [0x%08Lx] = %s\n" addr (V.exp_to_string e)))))
+                     if !opt_trace_gt then 
+                       msg := !msg ^ (Printf.sprintf "add_g: Store [0x%08Lx] = %s\n" addr (V.exp_to_string e));
+                     if !opt_trace_loopsum_detailed then Printf.eprintf "%s" !msg
+                   )
+                 )))
 
   method is_gt_cond cond = 
     let res = Hashtbl.mem g_cond_t cond in
@@ -603,10 +615,9 @@ class loop_record tail head g= object(self)
   method print_ec =
     let loop i (addr, ec, op, typ, d0_opt, d_opt, d_opt', dd_opt, eeip) = (
       (match ec with
-         | Some exp -> (Printf.eprintf "[%d] mem[0x%08Lx] = %s\n" i addr (V.exp_to_string exp))
-         | None  -> (Printf.eprintf "[%d] mem[0x%08Lx] = None\n" i addr)
+         | Some exp -> (Printf.eprintf "[%d] mem[0x%08Lx] = %s (eeip: %Lx)\n" i addr (V.exp_to_string exp) eeip)
+         | None  -> (Printf.eprintf "[%d] mem[0x%08Lx] = None (eeip: %Lx)\n" i addr eeip)
       );
-      Printf.eprintf "		eeip: 0x%08Lx\n" eeip
     )
     in
       List.iteri loop gt
@@ -630,7 +641,8 @@ class loop_record tail head g= object(self)
 
 
   method add_bd (eip:int64) (e: V.exp) (d:int64) = (
-    Printf.eprintf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); 
+    if !opt_trace_loopsum_detailed then
+      Printf.eprintf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); 
     Hashtbl.replace bt eip (e, d))
 
   method check_bt eip = (
@@ -690,7 +702,6 @@ class loop_record tail head g= object(self)
         V.BinOp(V.BITAND, (guard_cond gt), !branch_cond)) 
     in
     let min_ec i l = (
-      Printf.eprintf "min_ec: %d\n" i;
       let (_, e, _, ty, _, _, _, _, _) = List.nth l i in
       let ec = (
         match e with
@@ -721,14 +732,14 @@ class loop_record tail head g= object(self)
         if List.length gt = 0 then raise LoopsumNotReady;
         let res = ref [] in
         let enter_cond = compute_enter_cond bt gt in
-          Printf.eprintf "enter_cond: %s\n" (V.exp_to_string enter_cond);
+          Printf.eprintf "----------------------------------------------------------------------------\n";
+          Printf.eprintf "* (Pre)enter condition: \n%s\n" (V.exp_to_string enter_cond);
           let loop i (addr, ec_opt, op, typ, d0_opt, d_opt, d_opt', dd_opt, eeip)= (
             let precond = (min_ec i gt) in
             let ec = match ec_opt with
               | Some e -> e
               | None -> (Printf.eprintf "Invalid GT entry: No EC\n"; raise LoopsumNotReady) 
             in
-              Printf.eprintf "min_ec: result = %s\n" (V.exp_to_string precond);
               let rec compute_vt l = (
                 match l with
                   | h::l' -> (
@@ -742,12 +753,11 @@ class loop_record tail head g= object(self)
               ) in
               let iv_list = compute_vt ivt in
                 res := !res @ [(precond, iv_list, eeip)];
-                Printf.eprintf "Break1: eip = 0x%08Lx, addr = 0x%08Lx\n" eip addr;
                 if (eip = addr) then (apply iv_list)) 
           in
             List.iteri loop gt;
             lss <- lss @ [(enter_cond, !res)];
-            Printf.eprintf "LS size: %d\n" (List.length lss);
+            Printf.eprintf "* Loopsum set size: %d\n" (List.length lss);
       ) with
         | LoopsumNotReady -> (
             Printf.eprintf "Not ready to compute LS\n";)
@@ -758,10 +768,11 @@ class loop_record tail head g= object(self)
       if not (eip = head || Hashtbl.mem loop_body eip) then 
         (self#add_insn eip;
          let pred_list = g#pred eip in
-           Printf.eprintf "compute_loop_body: { ";
-           let print_pred addr = Printf.eprintf "%Lx, " addr in
-             List.iter print_pred pred_list;
-             Printf.eprintf "} -> %Lx\n" eip;
+           if !opt_trace_loop_detailed then
+             (Printf.eprintf "compute_loop_body: { ";
+              let print_pred addr = Printf.eprintf "%Lx, " addr in
+                List.iter print_pred pred_list;
+                Printf.eprintf "} -> %Lx\n" eip);
              List.iter inc_loopbody pred_list;
              i <- 0
         )
@@ -772,8 +783,10 @@ class loop_record tail head g= object(self)
       let print_insn eip () = 
         Printf.eprintf " %Lx\n" eip
       in
-        Hashtbl.iter print_insn loop_body;
-        Printf.eprintf "loopbody (%Lx -> %Lx) size: %d\n" tail head (Hashtbl.length loop_body) 
+        if !opt_trace_loop then
+          Printf.eprintf "loopbody (%Lx -> %Lx) size: %d\n" tail head (Hashtbl.length loop_body);
+        if !opt_trace_loop_detailed then
+          Hashtbl.iter print_insn loop_body
 
 
   initializer 
@@ -823,7 +836,8 @@ class dynamic_cfg (eip : int64) = object(self)
        in
          mark_last_all_seen node)
     in
-      Printf.eprintf "Current path covered %d loops\n" (List.length loop_enter_nodes);
+      if !opt_trace_loopsum then
+        Printf.eprintf "Current path covered %d loops\n" (List.length loop_enter_nodes);
       List.iter (fun (node, loop_opt) ->
                    match loop_opt with
                      | Some loop -> 
@@ -919,31 +933,29 @@ class dynamic_cfg (eip : int64) = object(self)
 
   (* Return bool * bool: whether enter a loop * whether enter a different loop*)	
   method private enter_loop src dest =
-    Printf.eprintf "enter loop from %Lx -> %Lx\n" src dest;
+    let msg = ref (Printf.sprintf "Enter loop from %Lx -> %Lx\n" src dest) in
     let is_backedge t h = g#is_dom t h in 
     let current_head = 
       (match (self#get_current_loop) with
          | None -> -1L
          | Some loop -> loop#get_head)
     in
-      if current_head != -1L then
-        Printf.eprintf "Currently in loop, hd = %Lx\n" current_head;
-      Hashtbl.iter (fun hd _ ->
-                      Printf.eprintf "looplist hd %Lx\n" hd
-      ) looplist;
       if Hashtbl.mem looplist dest then 
-        (Printf.eprintf "enter loop: find loop in looplist: 0x%08Lx\n" dest;
-         (true, true, Some (Hashtbl.find looplist dest)))
-      else if current_head = dest then (
-        Printf.eprintf "enter loop: current_head = new eip\n";
-        let l = self#get_current_loop in
-          (true, false, l))
-      else if is_backedge src dest then (
-        Printf.eprintf "enter loop: Find backedge 0x%Lx --> 0x%Lx\n" src dest;
-        let loop = new loop_record src dest g in
-          (true, true, Some loop)
-      )
-      else (false, false, None)
+        (if !opt_trace_loop then 
+           msg := !msg ^ (Printf.sprintf "Find loop in looplist, head = 0x%08Lx\n" dest);
+         (true, true, Some (Hashtbl.find looplist dest), !msg))
+      else if current_head = dest then 
+        (if !opt_trace_loop then
+           msg := !msg ^ (Printf.sprintf "Stay in the same loop, head = %Lx\n" dest);
+         let l = self#get_current_loop in
+           (true, false, l, !msg))
+      else if is_backedge src dest then 
+        (if !opt_trace_loop then
+           msg := !msg ^ (Printf.sprintf "Find backedge 0x%Lx --> 0x%Lx\n" src dest);
+         let loop = new loop_record src dest g in
+           (true, true, Some loop, !msg)
+        )
+      else (false, false, None, "")
 
   method private exit_loop eip = 
     let loop = self#get_current_loop in
@@ -964,48 +976,52 @@ class dynamic_cfg (eip : int64) = object(self)
        then(
          g#add_edge current_node eip;
          match (self#enter_loop current_node eip) with
-           | (true, false, loop) -> (
+           | (true, false, loop, msg) -> (
                (* Enter the same loop*)
                match loop with
-                 | Some l -> (l#inc_iter; EnterLoop)
+                 | Some l -> 
+                     (l#inc_iter; 
+                      if !opt_trace_loop then Printf.eprintf "%s" msg;
+                      EnterLoop)
                  | None -> ErrLoop)
-           | (true, true, loop) -> (
+           | (true, true, loop, msg) -> (
                (* Enter a different loop *)
-               if !opt_trace_loop then Printf.eprintf "enter loop {0x%08Lx ...} via (0x%08Lx -> 0x%08Lx)\n" eip current_node eip;
                Stack.push eip loopstack;
                match loop with
                  | Some lp -> (
                      lp#inc_iter;
                      if not (Hashtbl.mem looplist eip) then Hashtbl.add looplist eip lp; 
-                     if !opt_trace_loop then 
-                       Printf.eprintf "Now at iter %d, there are %d loops in list\n" lp#get_iter (Hashtbl.length looplist);
+                     if !opt_trace_loop then Printf.eprintf "%s" msg;
+                     if !opt_trace_loop_detailed then 
+                       Printf.eprintf "At iter %d, there are %d loops in list\n" lp#get_iter (Hashtbl.length looplist);
                      EnterLoop)
                  | None -> ErrLoop	
              )
-           | (_, in_loop, _) -> 
+           | (_, in_loop, _, msg) -> 
                (let (loop, exit) = self#exit_loop eip in
                   if exit then (
                     (* Exit loop *)
                     (match loop with
                        | Some l -> (
-                           if !opt_trace_loop then Printf.eprintf "End on %d-th iter\n" (l#get_iter);
+                           if !opt_trace_loop then Printf.eprintf "%sEnd on %d-th iter\n" msg (l#get_iter);
                            if (l#get_status != Some true) 
-                               && (self#get_iter > 2) && (l#get_lss = []) then ( 
-                             l#compute_lss current_node apply;
-                             if !opt_trace_ivt then(
-                               let ivt = l#get_ivt in
-                               let ivt_len = List.length ivt in
-                                 if ivt_len > 0 then (
-                                   Printf.eprintf "\n";
-                                   Printf.eprintf "******************** IVT size: %d  *******************************\n" (ivt_len);
-                                   l#print_ivt;
-                                   Printf.eprintf "\n"));
-                             if !opt_trace_gt then(
-                               let gt = l#get_gt in
-                               let gt_len = List.length gt in
-                                 (*if gt_len > 0 then*) (
-                                   Printf.eprintf "********************* GT size: %d  **************\n" gt_len;
-                                   l#print_ec)));
+                               && (self#get_iter > 2) && (l#get_lss = []) then 
+                             (l#compute_lss current_node apply;
+                              if !opt_trace_ivt then(
+                                let ivt = l#get_ivt in
+                                let ivt_len = List.length ivt in
+                                  if ivt_len > 0 then (
+                                    Printf.eprintf "* IVT size: %d\n" (ivt_len);
+                                    l#print_ivt;
+                                  ));
+                              if !opt_trace_gt then(
+                                let gt = l#get_gt in
+                                let gt_len = List.length gt in
+                                   (*if gt_len > 0 then*) (
+                                     Printf.eprintf "* GT size: %d\n" gt_len;
+                                     l#print_ec));
+                              Printf.eprintf "----------------------------------------------------------------------------\n";
+                             );
                            l#reset;)
                        | None -> (Printf.eprintf "Warning: No loop rec while exiting a loop"));		
                     ignore(try Stack.pop loopstack with Stack.Empty -> 0L); 
@@ -1047,7 +1063,10 @@ class dynamic_cfg (eip : int64) = object(self)
                           looprec := Some l
         ) looplist;
         (match !looprec with      
-           | Some l -> Printf.eprintf "0x%Lx is in loop\n" eip;true
+           | Some l -> (
+               if !opt_trace_loop_detailed then
+                 Printf.eprintf "0x%Lx is in loop\n" eip;
+               true)
            | _ -> false)
     )
     in
@@ -1056,8 +1075,7 @@ class dynamic_cfg (eip : int64) = object(self)
         (let rec get_precond l cur =
            match l with
              | (h, _)::rest -> 
-                 (Printf.eprintf "cur = %d, all_seen = %B\n" cur (is_all_seen (get_t_child cur));
-                  if cur = -1 || not (is_all_seen (get_t_child cur)) then 
+                 (if cur = -1 || not (is_all_seen (get_t_child cur)) then 
                     V.BinOp(V.BITOR, h, (get_precond rest (get_f_child cur)))
                   else 
                     get_precond rest (get_f_child cur)
@@ -1066,7 +1084,8 @@ class dynamic_cfg (eip : int64) = object(self)
          in
          let random_bit_gen () = 
            let cond = get_precond l (get_t_child cur_ident) in
-             Printf.eprintf "useLoopsum cond: %s\n" (V.exp_to_string cond);
+             if !opt_trace_loopsum_detailed then
+               Printf.eprintf "Check all preconds: %s\n" (V.exp_to_string cond);
              if check cond then true
              (* TODO: uncomment the code bellow to enable random decision*)
              (*
@@ -1080,7 +1099,6 @@ class dynamic_cfg (eip : int64) = object(self)
            add_loopsum_node (cur_ident, self#get_current_loop);
            let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
            in
-             Printf.eprintf "Add node %d to loop_enter_nodes\n" cur_ident;
              if res then
                Printf.eprintf "Decide to use loopsum\n"
              else Printf.eprintf "Decide not to use loopsum\n";
@@ -1125,6 +1143,7 @@ class dynamic_cfg (eip : int64) = object(self)
               | Some loop -> loop#set_status (Some true)
               | _ -> failwith "");
            let (id, vt, eeip) =  choose_loopsum l in
+             Printf.eprintf "Choose loopsum[%d]\n" id;
              extend_with_loopsum l (id+1);
              (vt, eeip))
         else 
@@ -1159,16 +1178,22 @@ class dynamic_cfg (eip : int64) = object(self)
   )
 
   method reset = 
+    if !opt_trace_loopsum_detailed then
+      Printf.eprintf "Reset dcfg starts with %Lx\n" head;
     g#reset; 
     current_node <- -1L;
 
   method make_snap =
+    if !opt_trace_loopsum_detailed then
+      Printf.eprintf "make_snap dcfg starts with %Lx\n" head;
     g#make_snap;
     Hashtbl.iter (fun _ l -> l#make_snap) looplist;
     current_node_snap <- current_node;
     loopstack_snap <- Stack.copy loopstack
 
   method reset_snap =
+    if !opt_trace_loopsum_detailed then
+      Printf.eprintf "Reset_snap dcfg starts with %Lx\n" head;
     g#reset_snap;
     current_node <- current_node_snap;
     loopstack <- Stack.copy loopstack_snap;

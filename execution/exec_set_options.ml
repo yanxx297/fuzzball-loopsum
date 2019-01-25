@@ -512,7 +512,13 @@ let cmdline_opts =
     ("-trace-eip", Arg.Set(opt_trace_eip),
      " Print PC of each insn executed");
     ("-trace-loop", Arg.Set(opt_trace_loop),
-     " Print entering loops");
+     " Print message about dynamic loops detection");
+    ("-trace-loop-detailed", 
+     (Arg.Unit
+        (fun () ->
+           opt_trace_loop := true;
+           opt_trace_loop_detailed := true;)),
+     " Print more details about dynamic loops detection");
     ("-print-dt", Arg.Set(opt_print_dt),
      " Print the final decision tree to file /tmp/bdt_graph in xdot format");
     ("-trace-ivt", Arg.Set(opt_trace_ivt),
@@ -537,7 +543,17 @@ let cmdline_opts =
 	  opt_trace_gt := true;
 	  opt_trace_precond := true;
 	  opt_trace_postcond := true;)),
-     " Enable several verbose tracing options");
+     " Enable several tracing option for loop summarization");
+    ("-trace-loopsum-detailed",
+     (Arg.Unit
+        (fun () ->
+           opt_trace_loopsum_detailed := true;
+           opt_trace_loopsum := true;
+           opt_trace_ivt := true;
+           opt_trace_gt := true;
+           opt_trace_precond := true;
+           opt_trace_postcond := true;)),
+     " Print more detailes for loop summarization");
     ("-trace-eval", Arg.Set(opt_trace_eval),
      " Print details of IR evaluation");
     ("-trace-fpu", Arg.Set(opt_trace_fpu),

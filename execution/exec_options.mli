@@ -271,7 +271,9 @@ val opt_error_msg_threshold : int option ref
 
 val opt_use_loopsum : bool ref
 val opt_trace_loopsum : bool ref
+val opt_trace_loopsum_detailed : bool ref
 val opt_trace_loop : bool ref
+val opt_trace_loop_detailed : bool ref
 val opt_trace_ivt : bool ref
 val opt_trace_gt : bool ref
 val opt_trace_precond : bool ref

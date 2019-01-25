@@ -1156,23 +1156,23 @@ struct
           | V.BinOp(V.EQ, lhs, (V.Constant(_) as rhs)) ->
               (* je/jne *)
               (if !opt_trace_loopsum then
-                 Printf.printf "%s (je/jne) %s\n" msg (V.exp_to_string e);
+                 Printf.eprintf "%s (je/jne):\n%s\n" msg (V.exp_to_string e);
                if targ = targ2 then (Some lhs, Some rhs, V.EQ) else 
                  (Some lhs, Some rhs, V.NEQ))
           | V.BinOp(V.SLT, (V.BinOp(V.PLUS, _, _) as lhs), (V.Constant(_) as rhs)) ->
               (* jl/jge*)
               (if !opt_trace_loopsum then
-                 Printf.printf "%s (jl/jge) %s\n" msg (V.exp_to_string e);
+                 Printf.eprintf "%s (jl/jge):\n%s\n" msg (V.exp_to_string e);
                if targ = targ2 then (Some lhs, Some rhs, V.SLT) else (Some rhs, Some lhs, V.SLE))
           | V.BinOp(V.BITOR, V.BinOp(V.SLT, _, _), V.BinOp(V.EQ, lhs, rhs)) ->
               (* jg/jle *)
               (if !opt_trace_loopsum then
-                 Printf.printf "%s (jg/jle) %s\n" msg (V.exp_to_string e);
+                 Printf.eprintf "%s (jg/jle):\n%s\n" msg (V.exp_to_string e);
                if targ = targ2 then (Some lhs, Some rhs, V.SLE) else (Some rhs, Some lhs, V.SLT))
           | V.Cast(V.CAST_HIGH, V.REG_1, V.BinOp(V.PLUS, lhs, rhs)) ->
               (* js/jns *)
               (if !opt_trace_loopsum then
-                 Printf.printf "%s (js/jns) %s\n" msg (V.exp_to_string e);
+                 Printf.eprintf "%s (js/jns):\n%s\n" msg (V.exp_to_string e);
                if targ = targ2 then (Some lhs, Some (V.UnOp(V.NEG, rhs)), V.SLT) 
                else (Some (V.UnOp(V.NEG, rhs)), Some lhs, V.SLE))
           | V.Lval(V.Temp(var)) -> 
@@ -1193,9 +1193,10 @@ struct
                          and typ_r = Vine_typecheck.infer_type_fast rhs in
                          let lhs' = (self#simplify_exp typ_l lhs) 
                          and rhs' = (self#simplify_exp typ_r rhs) in
-                           if not (typ_l = typ_r) then ( 
-                             Printf.printf "left is %s, while right is %s\n" (V.type_to_string typ_l) (V.type_to_string typ_r);
-                             Printf.printf "%s %s %s\n" (V.exp_to_string lhs) (V.binop_to_string op) (V.exp_to_string rhs);
+                           if not (typ_l = typ_r) then (
+                             if !opt_trace_loopsum_detailed then
+                               (Printf.eprintf "left is %s, while right is %s\n" (V.type_to_string typ_l) (V.type_to_string typ_r);
+                                Printf.eprintf "%s %s %s\n" (V.exp_to_string lhs) (V.binop_to_string op) (V.exp_to_string rhs));
                              failwith "Illegal comparison cond");
                            let targ' = (
                              match b with
@@ -1203,9 +1204,10 @@ struct
                                | false -> targ2) in				
                              if targ = targ' then (
                                let eeip = (
-                                 Printf.printf "targ = 0x%08Lx\n" targ;
-                                 Printf.printf "targ1 = 0x%08Lx\n" targ1;
-                                 Printf.printf "targ2 = 0x%08Lx\n" targ2;
+                                 if !opt_trace_loopsum_detailed then
+                                   (Printf.eprintf "targ = 0x%08Lx\n" targ;
+                                    Printf.eprintf "targ1 = 0x%08Lx\n" targ1;
+                                    Printf.eprintf "targ2 = 0x%08Lx\n" targ2);
                                  if targ = targ1 then targ2 else targ1) in
                                let check e =
                                  let typ = Vine_typecheck.infer_type_fast e in
@@ -1214,11 +1216,18 @@ struct
                                in
                                  self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check eeip)
                              else (
-                               Printf.printf "Failed to create gt entry: targ = 0x%Lx, targ' = 0x%Lx\n" targ targ'
+                               if !opt_trace_loopsum then
+                                 Printf.eprintf "Failed to create gt entry: targ = 0x%Lx, targ' = 0x%Lx\n" targ targ'
                              )) 
-                     | (Some lhs, _) -> (Printf.printf "Only lhs: %s\n" (V.exp_to_string lhs))
-                     | (_, Some rhs) -> (Printf.printf "Only rhs: %s\n" (V.exp_to_string rhs))
-                     | _ -> (Printf.printf "Neither lhs nor rhs available\n")
+                     | (Some lhs, _) -> 
+                         (if !opt_trace_loopsum then 
+                            Printf.eprintf "Only lhs feasible: %s\n" (V.exp_to_string lhs))
+                     | (_, Some rhs) -> 
+                         (if !opt_trace_loopsum then 
+                            Printf.eprintf "Only rhs feasible: %s\n" (V.exp_to_string rhs))
+                     | _ -> 
+                         (if !opt_trace_loopsum then 
+                            Printf.eprintf "Neither lhs nor rhs feasible\n")
                   )) 
             )
           | _ -> ());
@@ -1352,7 +1361,6 @@ struct
       let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func code= (
         let ident = 0xc000 + (code land 0xfff) in
           dt#start_new_query;
-          Printf.printf "Try extend for loopsum\n";
           let (res, _) = dt#try_extend trans_func try_func non_try_func random_bit_gen both_fail_func (self#eip_ident ident)
           in          
             dt#count_query;
@@ -1391,7 +1399,8 @@ struct
       in
       (* Apply loop summarization to IVs in IVT*)
       let apply_loopsum eip vt eeip = 
-        Printf.printf "Apply loopsum at 0x%Lx\n" eip;
+        if !opt_trace_loopsum then
+          Printf.printf "Apply loopsum at 0x%Lx\n" eip;
         let rec loop l = (
           match l with
             | h::l' -> ( 
