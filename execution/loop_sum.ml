@@ -59,9 +59,9 @@ class simple_graph (h: int64) = object(self)
   val successor = Hashtbl.create 100
   val predecessor = Hashtbl.create 100
 
+  (*NOTE: what's the purpose to have domin and full_domin?*)
   val mutable domin = DS.empty
   val mutable full_dom = DS.empty
-
 
   method private dom_size dom = 
     let s = DS.cardinal dom in
@@ -76,6 +76,7 @@ class simple_graph (h: int64) = object(self)
         | None -> DS.empty
         | Some n -> n#get_domin
 
+  (* Compute dominators set*)
   method dom_comp id = 
     domin <- full_dom;
     let inter_set pred_id set = 
@@ -192,10 +193,8 @@ class loop_record tail head g= object(self)
            | None -> "None");
     loopsum_status <- opt)
 
-  method update_loopsum = (
+  method update_loopsum = 
     loopsum_status <- None
-  (**If we clear up LS set after each updating, we must also remove the corresponding decision sub-tree*)
-  (*lss <- []*))
 
   method get_loop_body = loop_body
 
@@ -270,6 +269,8 @@ class loop_record tail head g= object(self)
                 | None -> self#replace_iv (addr, V.BinOp(V.MINUS, v0, dv'), v', v', Some dv')
                 | Some dv -> (
                     let cond = V.BinOp(V.EQ, dv, dv') in
+                      (*NOTE: should check validity instead of satisfiability?*)
+                      (*NOTE2: should add dv == dv' to pre cond?*)
                       if !opt_trace_loopsum_detailed then 
                         Printf.eprintf "iv cond (full): %s \n" (V.exp_to_string cond);
                       let cond' = simplify_cond s_func cond in
@@ -311,6 +312,7 @@ class loop_record tail head g= object(self)
     ) in
       ivt <- loop ivt
 
+  (* FIXME: consider the situation that a variable is updated mutiple times in the same loop iteration*)
   method add_iv (addr: int64) (exp: V.exp) =
 (*     Printf.eprintf "add_iv: try mem[0x%08Lx] \n" addr; *)
     match (self#ivt_search addr) with
@@ -333,7 +335,7 @@ class loop_record tail head g= object(self)
     if !opt_trace_ivt then Printf.eprintf "clean IVT of 0x%08Lx\n" id;
     ivt <- [];
 
-  (*Gate table: (eip | (EC, op, ty, D0, D, D', dD, exit_eip)*)
+  (*Guard table: (eip | (EC, op, ty, D0, D, D', dD, exit_eip)*)
   (* EC: the expected execution count*)
   val mutable gt = [] 
   val g_cond_t = Hashtbl.create 10 (**TODO: figure out whether to remove this container*)
@@ -452,6 +454,7 @@ class loop_record tail head g= object(self)
                | Some g -> (
                    let msg = ref "" in
                    let (_, ec, op, _, d0_opt, d_opt, d_opt', dd_opt, eeip) = g in
+                     (* NOTE: the 2 fields of D seems redundant *)
                      if not (d_opt' = exp) then self#replace_g (addr, ec, op, ty, d0_opt, d_opt, exp, dd_opt, eeip);
                      let (dist_opt, dD_opt, eCount_opt) = 
                        (match (d_opt, exp) with
@@ -701,6 +704,7 @@ class loop_record tail head g= object(self)
         Hashtbl.iter compute_branch_cond bt;
         V.BinOp(V.BITAND, (guard_cond gt), !branch_cond)) 
     in
+    (* NOTE: Should compare ECs of different loopsums? *)
     let min_ec i l = (
       let (_, e, _, ty, _, _, _, _, _) = List.nth l i in
       let ec = (
@@ -801,6 +805,8 @@ class dynamic_cfg (eip : int64) = object(self)
   val g = new simple_graph eip
   val mutable current_node = -1L
   val mutable current_node_snap = -1L
+
+  (* The eip of the 1st instruction in the procedure *)
   val head = eip
 
   method get_head = head

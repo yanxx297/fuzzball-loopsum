@@ -649,6 +649,7 @@ struct
       text_start <- s;
       text_end <- e
 
+    (* FIXME: esp, last_eip and ret_addr should not be the index if we call a procedure from multiple locations*)
     (* Dynamic CFG for each procedure, indexed by (esp, last_eip, eip, ret_addr).
        current_dcfg: referebce to current dynamic CFG*)
     val dcfgs = Hashtbl.create 100
