@@ -327,12 +327,13 @@ class loop_record tail head g= object(self)
           if iter = 2 then (
             ivt <- ivt @ [(addr, exp, exp, exp, None)];)
 (*             if !opt_trace_ivt then Printf.eprintf "add_iv: Store [0x%08Lx] = %s\n" addr (V.exp_to_string exp)) *)
+(*
           else (
-            if !opt_trace_ivt then Printf.eprintf " 0x%08Lx not exist in ivt\n" addr)			
+            if !opt_trace_loopsum then Printf.eprintf " 0x%08Lx not exist in ivt\n" addr)			
+ *)
         ) 
 
   method clean_ivt = 
-    if !opt_trace_ivt then Printf.eprintf "clean IVT of 0x%08Lx\n" id;
     ivt <- [];
 
   (*Guard table: (eip | (EC, op, ty, D0, D, D', dD, exit_eip)*)
@@ -639,7 +640,6 @@ class loop_record tail head g= object(self)
       gt <- loop gt
 
   method clean_gt = 
-    if !opt_trace_gt then Printf.eprintf "clean GT of 0x%08Lx\n" id;
     gt <- [] 
 
 
@@ -736,7 +736,6 @@ class loop_record tail head g= object(self)
         if List.length gt = 0 then raise LoopsumNotReady;
         let res = ref [] in
         let enter_cond = compute_enter_cond bt gt in
-          Printf.eprintf "----------------------------------------------------------------------------\n";
           Printf.eprintf "* (Pre)enter condition: \n%s\n" (V.exp_to_string enter_cond);
           let loop i (addr, ec_opt, op, typ, d0_opt, d_opt, d_opt', dd_opt, eeip)= (
             let precond = (min_ec i gt) in
@@ -1026,7 +1025,6 @@ class dynamic_cfg (eip : int64) = object(self)
                                    (*if gt_len > 0 then*) (
                                      Printf.eprintf "* GT size: %d\n" gt_len;
                                      l#print_ec));
-                              Printf.eprintf "----------------------------------------------------------------------------\n";
                              );
                            l#reset;)
                        | None -> (Printf.eprintf "Warning: No loop rec while exiting a loop"));		

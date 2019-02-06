@@ -995,7 +995,8 @@ struct
                       | ExitLoop -> (				
                           if !opt_trace_postcond && not (!msg = "") then 
                             (Printf.eprintf "* Post condition:\n";
-                             Printf.eprintf "%s" !msg
+                             Printf.eprintf "%s" !msg;
+                             Printf.eprintf "----------------------------------------------------------------------------\n";
                             )
                         )
                       |_ -> ()));

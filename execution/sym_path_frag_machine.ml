@@ -1004,6 +1004,7 @@ struct
 	g_assert(let (b,_) =
 		 self#query_with_path_cond_wcache V.exp_true true false
 	       in b) 100 "Sym_path_frag_machine.finish_path";
+      Printf.eprintf "############################################################################\n";
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan

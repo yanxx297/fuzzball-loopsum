@@ -1421,8 +1421,9 @@ struct
       let stmt = spfm#get_stmt in
         if is_cjmp stmt then (
           let eip = get_eip stmt in
-            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp try_ext dt#random_bit dt#is_all_seen dt#cur_ident dt#get_t_child dt#get_f_child in
-              (* Check loopsum again after executing a cjmp instruction *)
+            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp 
+                               try_ext dt#random_bit dt#is_all_seen dt#cur_ident dt#get_t_child dt#get_f_child 
+            in
               (match vt with
                  | [] -> spfm#run() 
                  | _ -> apply_loopsum eip vt eeip
