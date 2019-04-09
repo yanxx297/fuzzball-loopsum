@@ -782,12 +782,13 @@ struct
       *)
       preference
 
-	method eval_cjmp_cond exp = 
-		let exp' = self#eval_int_exp exp in
-		(*Printf.printf "cond exp: %s\n" (V.exp_to_string (D.to_symbolic_1 exp'));*)
-		let v = form_man#simplify1 (exp') in
-		let e = D.to_symbolic_1 v in
-		(v, e)
+    method eval_cjmp_cond exp = 
+      let exp' = self#eval_int_exp exp in
+      let v = form_man#simplify1 (exp') in
+      let e = D.to_symbolic_1 v in
+        if !opt_trace_loopsum_detailed then
+          Printf.printf "eval_cjmp_cond: eval %s to %s\n" (V.exp_to_string exp) (V.exp_to_string e);
+        (v, e)
 		
     method eval_cjmp_targ targ1 targ2 v e =
       let eip = self#get_eip in

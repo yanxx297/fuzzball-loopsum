@@ -1147,90 +1147,42 @@ struct
                           | _ -> failwith "simplify_exp: illegal typ") in
                D.to_symbolic_1 res)
 
+    (* A wrapper around spfm#eval_cjmp for loop summarization*)
     (* Analyze the condition to get right and left side*)
+    (* This method runs after srfm#run()*)
     method eval_cjmp exp targ1 targ2 =
-      let (v, e) = self#eval_cjmp_cond exp in
-      let rec loop e targ = (
-        let msg = "Check loop cond" in
-        match e with
-          | V.BinOp(V.EQ, lhs, (V.Constant(_) as rhs)) ->
-              (* je/jne *)
-              (if !opt_trace_loopsum then
-                 Printf.eprintf "%s (je/jne):\n%s\n" msg (V.exp_to_string e);
-               if targ = targ2 then (Some lhs, Some rhs, V.EQ) else 
-                 (Some lhs, Some rhs, V.NEQ))
-          | V.BinOp(V.SLT, (V.BinOp(V.PLUS, _, _) as lhs), (V.Constant(_) as rhs)) ->
-              (* jl/jge*)
-              (if !opt_trace_loopsum then
-                 Printf.eprintf "%s (jl/jge):\n%s\n" msg (V.exp_to_string e);
-               if targ = targ2 then (Some lhs, Some rhs, V.SLT) else (Some rhs, Some lhs, V.SLE))
-          | V.BinOp(V.BITOR, V.BinOp(V.SLT, _, _), V.BinOp(V.EQ, lhs, rhs)) ->
-              (* jg/jle *)
-              (if !opt_trace_loopsum then
-                 Printf.eprintf "%s (jg/jle):\n%s\n" msg (V.exp_to_string e);
-               if targ = targ2 then (Some lhs, Some rhs, V.SLE) else (Some rhs, Some lhs, V.SLT))
-          | V.Cast(V.CAST_HIGH, V.REG_1, V.BinOp(V.PLUS, lhs, rhs)) ->
-              (* js/jns *)
-              (if !opt_trace_loopsum then
-                 Printf.eprintf "%s (js/jns):\n%s\n" msg (V.exp_to_string e);
-               if targ = targ2 then (Some lhs, Some (V.UnOp(V.NEG, rhs)), V.SLT) 
-               else (Some (V.UnOp(V.NEG, rhs)), Some lhs, V.SLE))
-          | V.Lval(V.Temp(var)) -> 
-              (FormMan.if_expr_temp form_man var (fun e' -> loop e' targ) (None, None, V.NEQ) (fun v -> ()))
-          | _ -> (None, None, V.NEQ))
+      let if_expr_temp var fn_t else_val else_fn = 
+        FormMan.if_expr_temp form_man var fn_t else_val else_fn
       in
+      let (v, e) = self#eval_cjmp_cond exp in
       let b = self#eval_cjmp_targ targ1 targ2 v e in 
         (match spfm#is_guard targ1 targ2 with
-          | (true, targ) -> (
-              (*targ' : real targ choosen by cjmp_choose*)
-              (*targ : the in-loop targ*)
-              if not (targ = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) || e = V.Constant(V.Int(V.REG_1, 0L))) 
-              then (
-                let (lhs_opt, rhs_opt, op) = (loop e targ) in
-                  (match (lhs_opt, rhs_opt) with
-                     | (Some lhs, Some rhs) -> (
-                         let typ_l = Vine_typecheck.infer_type_fast lhs
-                         and typ_r = Vine_typecheck.infer_type_fast rhs in
-                         let lhs' = (self#simplify_exp typ_l lhs) 
-                         and rhs' = (self#simplify_exp typ_r rhs) in
-                           if not (typ_l = typ_r) then (
-                             if !opt_trace_loopsum_detailed then
-                               (Printf.eprintf "left is %s, while right is %s\n" (V.type_to_string typ_l) (V.type_to_string typ_r);
-                                Printf.eprintf "%s %s %s\n" (V.exp_to_string lhs) (V.binop_to_string op) (V.exp_to_string rhs));
-                             failwith "Illegal comparison cond");
-                           let targ' = (
-                             match b with
-                               | true -> targ1
-                               | false -> targ2) in				
-                             if targ = targ' then (
-                               let eeip = (
-                                 if !opt_trace_loopsum_detailed then
-                                   (Printf.eprintf "targ = 0x%08Lx\n" targ;
-                                    Printf.eprintf "targ1 = 0x%08Lx\n" targ1;
-                                    Printf.eprintf "targ2 = 0x%08Lx\n" targ2);
-                                 if targ = targ1 then targ2 else targ1) in
-                               let check e =
-                                 let typ = Vine_typecheck.infer_type_fast e in
-                                 let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
-                                   is_sat
-                               in
-                                 self#add_g self#get_eip lhs' rhs' op typ_l self#simplify_exp check eeip)
-                             else (
-                               if !opt_trace_loopsum then
-                                 Printf.eprintf "Failed to create gt entry: targ = 0x%Lx, targ' = 0x%Lx\n" targ targ'
-                             )) 
-                     | (Some lhs, _) -> 
-                         (if !opt_trace_loopsum then 
-                            Printf.eprintf "Only lhs feasible: %s\n" (V.exp_to_string lhs))
-                     | (_, Some rhs) -> 
-                         (if !opt_trace_loopsum then 
-                            Printf.eprintf "Only rhs feasible: %s\n" (V.exp_to_string rhs))
-                     | _ -> 
-                         (if !opt_trace_loopsum then 
-                            Printf.eprintf "Neither lhs nor rhs feasible\n")
-                  )) 
-            )
-          | _ -> ());
+           (*targ : real targ choosen by cjmp_choose*)
+           (*in_loop : the jump targ that is in loop*)
+           | (true, in_loop) -> 
+               (match (Loop_sum.split_cond e b if_expr_temp) with
+                  | (Some lhs, Some rhs, op) ->
+                      (let ty_l = Vine_typecheck.infer_type_fast lhs in
+                       let ty_r = Vine_typecheck.infer_type_fast rhs in
+                       let lhs' = (self#simplify_exp ty_l lhs) in
+                       let rhs' = (self#simplify_exp ty_r rhs) in
+                       let targ = (if b then targ1 else targ2) in
+                         if (in_loop = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) 
+                               || e = V.Constant(V.Int(V.REG_1, 0L))) then ()
+                         else if not (ty_l = ty_r) then 
+                           failwith "Illegal cjmp: inconsistent ty_l and ty_r"
+                         else if targ != in_loop && !opt_trace_loopsum then
+                              Printf.eprintf "Failed to create gt entry: targ(0x%Lx) not in loop(%Lx)\n" targ in_loop
+                         else
+                           (let eeip = if in_loop = targ1 then targ2 else targ1 in
+                            let check e =
+                              let ty = Vine_typecheck.infer_type_fast e in
+                              let (is_sat, _) = self#query_with_path_cond (self#simplify_exp ty e) true in
+                                is_sat
+                            in
+                              self#add_g (self#get_eip, op, ty_l, exp, lhs', rhs', b, eeip) check self#simplify_exp))
+                  | _ -> ())
+           | _ -> ());
         (match b with
            | true -> self#add_bd (self#get_eip) e targ1
            | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2);
@@ -1355,8 +1307,9 @@ struct
 	      -> (v1, (conc ty2 v2))
 	  | _ -> (v1, v2)
 
-    (* A wrapper around spfm#run() to loop for valid loopsum and apply it to 
-     inductive variables. *)
+    (* A wrapper around fm#run() to loop for valid loopsum and apply it to *)
+    (* inductive variables.*)
+    (* All code in this function runs before fm#run_sl(). *)
     method run () = 
       let try_ext trans_func try_func non_try_func random_bit_gen both_fail_func code= (
         let ident = 0xc000 + (code land 0xfff) in
@@ -1366,70 +1319,75 @@ struct
             dt#count_query;
             res) 
       in
-      let get_eip stmt =
-        let rec loop l = (
-          match l with
-            | st::l' -> (
-                match st with
-                  | V.Label(s) -> V.label_to_addr s
-                  | _ -> loop l'
-              )
-            | [] -> 0L
-        )
-        in
-          loop stmt
+      let if_expr_temp var fn_t else_val else_fn = 
+        FormMan.if_expr_temp form_man var fn_t else_val else_fn
       in
-      let is_cjmp stmt = 
-        let rec loop l = (
-          match l with
-            | st::l' -> (
-                match st with
-                  | V.CJmp(_, _, _) -> true
-                  | _ -> loop l'
-              )
-            | [] -> false
-        )
-        in
-          loop stmt
-      in
+      (*NOTE: why not using self#get_eip?*)
+      let eip =
+        (let rec get_eip l = 
+           (match l with
+              | st::l' -> (
+                  match st with
+                    | V.Label(s) -> V.label_to_addr s
+                    | _ -> get_eip l'
+                )
+              | [] -> 0L)
+         in
+         let stmt = spfm#get_stmt in
+           get_eip stmt)
+         in
       let check e = 
         let typ = Vine_typecheck.infer_type_fast e in
         let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
           is_sat
       in
-      (* Apply loop summarization to IVs in IVT*)
-      let apply_loopsum eip vt eeip = 
-        if !opt_trace_loopsum then
-          Printf.printf "Apply loopsum at 0x%Lx\n" eip;
-        let rec loop l = (
-          match l with
-            | h::l' -> ( 
-                let (addr, exp) = h in
-                let ty = Vine_typecheck.infer_type_fast exp in 
-                let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
-                  self#store_exp addr exp' ty;
-                  loop l'
-              )
-            | [] -> ()
-        ) in
-          loop vt;
-          let lab = Printf.sprintf "pc_0x%Lx" eeip in
-            self#set_eip eeip;
-            Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
-            lab
+      let load_iv offset ty = 
+        let addr = Int64.add self#get_stack_base_addr offset in
+          match ty with
+            | V.REG_8 -> D.to_symbolic_8 (self#load_byte addr)
+            | V.REG_16 -> D.to_symbolic_16 (self#load_short addr)
+            | V.REG_32 -> D.to_symbolic_32 (self#load_word addr)
+            | V.REG_64 -> D.to_symbolic_64 (self#load_long addr)
+            |_ -> 
+                let msg = Printf.sprintf "Unsupported type %s\n" (V.type_to_string ty) in 
+                  failwith msg
       in
-      let stmt = spfm#get_stmt in
-        if is_cjmp stmt then (
-          let eip = get_eip stmt in
-            let (vt, eeip) = self#check_loopsum eip check self#simplify_exp 
-                               try_ext dt#random_bit dt#is_all_seen dt#cur_ident dt#get_t_child dt#get_f_child 
-            in
-              (match vt with
-                 | [] -> spfm#run() 
-                 | _ -> apply_loopsum eip vt eeip
-              ))
-        else
-          spfm#run()
+      let eval_cond exp =
+        let (_, e) = self#eval_cjmp_cond exp in
+          e
+      in
+      (* Apply loop summarization to IVs in IVT*)
+      let apply_loopsum vt eeip = 
+        let rec loop l = 
+          (match l with
+             | h::l' -> ( 
+                 let (offset, exp) = h in
+                 let addr = Int64.add self#get_stack_base_addr offset in
+                 let ty = Vine_typecheck.infer_type_fast exp in 
+                 let rhs = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                   self#store_exp addr rhs ty;
+                   loop l'
+               )
+             | [] -> ())
+        in
+          loop vt;
+          self#set_eip eeip;
+          Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
+      in
+      let res = spfm#run() in
+        if self#is_loop_head eip then 
+          (let (vt, eeip) = self#check_loopsum eip check self#simplify_exp 
+                              load_iv eval_cond if_expr_temp try_ext 
+                              dt#random_bit dt#is_all_seen dt#cur_ident
+                              dt#get_t_child dt#get_f_child 
+           in
+             (match vt with
+                | [] -> ()
+                | _ -> 
+                    (if !opt_trace_loopsum then
+                       Printf.eprintf "Apply loopsum at 0x%Lx\n" eip;
+                     apply_loopsum vt eeip)));
+        res
 
     val mutable extra_store_hooks = []
     val mutable last_set_null = Hashtbl.create 100
@@ -2116,7 +2074,7 @@ struct
 
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
-	let h = self#get_loop_head in
+      let h = self#get_loop_head in
 	(*Printf.printf "jump_hook: 0x%08Lx | 0x%08Lx\n" h eip;*) 
 	if (eip = h) then
           let check e = 
@@ -2124,7 +2082,7 @@ struct
             let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
               is_sat
           in
-            ignore(spfm#renew_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
+            ignore(spfm#update_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
       if !opt_check_for_ret_addr_overwrite then
 	self#update_ret_addrs last_insn last_eip eip;
 
@@ -2230,8 +2188,6 @@ struct
           | _ -> failwith "Unexpected type in srfm#handle_store"
         in
 	let v' = (self#simplify_exp ty v) in
-        let addr = self#eval_addr_exp addr_e in
-	spfm#add_iv addr v';
 	let r = ref None in
 	let addr = ref 0L in
 	let table_store_status =
@@ -2274,12 +2230,14 @@ struct
 		  | None -> ())
 	   | _ -> ());
 	if not table_store_status then
-	  (match ty with
-	  | V.REG_8 -> self#store_byte_region !r !addr value
-	  | V.REG_16 -> self#store_short_region !r !addr value
-	  | V.REG_32 -> self#store_word_region !r !addr value
-	  | V.REG_64 -> self#store_long_region !r !addr value
-	  | _ -> failwith "Unsupported type in memory move")
+          ((match ty with
+              | V.REG_8 -> self#store_byte_region !r !addr value
+              | V.REG_16 -> self#store_short_region !r !addr value
+              | V.REG_32 -> self#store_word_region !r !addr value
+              | V.REG_64 -> self#store_long_region !r !addr value
+              | _ -> failwith "Unsupported type in memory move");
+           let offset = Int64.sub !addr self#get_stack_base_addr in
+             spfm#add_iv offset v')
 	else ()
 
     method concretize_misc =

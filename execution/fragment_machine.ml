@@ -345,7 +345,7 @@ class virtual fragment_machine = object
   method virtual printable_word_reg : register_name -> string
   method virtual printable_long_reg : register_name -> string
 
-	method virtual store_exp : int64 -> V.exp -> V.typ -> unit
+  method virtual store_exp : int64 -> V.exp -> V.typ -> unit
   method virtual store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_word_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
@@ -541,30 +541,36 @@ class virtual fragment_machine = object
   method virtual set_start_eip : int64 -> unit
   method virtual get_stmt : V.stmt list 
   method virtual set_text_range : int64 -> int64 -> unit
+  method virtual get_stack_base_addr: int64
   method virtual is_guard : int64 -> int64 -> bool * int64
   method virtual branch_heur : int64 -> int64 -> int64 option
   method virtual in_loop : int64 -> bool
   method virtual get_loop_head : int64
   method virtual add_iv : int64 -> Vine.exp -> unit
-  method virtual clean_ivt : unit
-  method virtual renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
+  method virtual update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
   method virtual print_dt : unit
-  method virtual add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> int64 -> unit
-  method virtual clean_gt : unit
-  method virtual is_gt_cond : Vine.exp -> bool
+  method virtual add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
+      (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
   method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
   method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
   method virtual check_loopsum : int64 ->
     (Vine.exp -> bool) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->
+    (int64 -> Vine.typ -> Vine.exp) ->
+    (Vine.exp -> Vine.exp) ->
+    (Vine.var ->
+       (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+       Vine.exp option * Vine.exp option * Vine.binop_type ->
+       (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
-      (bool -> unit) ->
-      (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
-    bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
-    (int64 * Vine.exp) list * int64
+      (bool -> unit) -> (unit -> bool) -> (bool -> bool) -> int -> bool) ->
+    bool ->
+    (int -> bool) ->
+    int -> (int -> int) -> (int -> int) -> (int64 * Vine.exp) list * int64  
   method virtual mark_extra_all_seen : (int -> unit) ->
     (int -> bool) -> (int -> int) -> (int -> int) -> unit
+  method virtual is_loop_head : int64 -> bool
   method virtual schedule_proc : unit
   method virtual maybe_switch_proc : int64 -> int64 option
   method virtual alloc_proc : (unit -> unit) -> unit
@@ -649,11 +655,15 @@ struct
       text_start <- s;
       text_end <- e
 
-    (* FIXME: esp, last_eip and ret_addr should not be the index if we call a procedure from multiple locations*)
-    (* Dynamic CFG for each procedure, indexed by (esp, last_eip, eip, ret_addr).
-       current_dcfg: referebce to current dynamic CFG*)
+    (* dcfgs:   a list of dynamic_cfg (defined in loop_sum.ml) for each function *)
+    (*          indexed by the first eip (head) of each func*)
+    (* current_dcfg: option of the dynamic_cfg *)
     val dcfgs = Hashtbl.create 100
-    val mutable current_dcfg = None	
+    val mutable current_dcfg = None
+
+    val mutable stackpointer = -1L
+
+    method get_stack_base_addr = stackpointer
 
     (**res = (is_guard?, in_loop_targ)*)
     method is_guard t_eip f_eip = 
@@ -699,52 +709,33 @@ struct
         | None -> -1L
         | Some g -> g#get_loop_head
 
-    method add_iv addr exp = 
+    method add_iv offset exp = 
       match current_dcfg with
         | None -> ()
-        | Some g -> g#add_iv addr exp
+        | Some g -> g#add_iv offset exp
 
-    method clean_ivt = 
-      match current_dcfg with
-        | None -> ()
-        | Some g -> g#clean_ivt
-
-    method renew_ivt s_func check = 
+    method update_ivt s_func check = 
       match current_dcfg with
         | None -> None
-        | Some g -> g#renew_ivt s_func check
+        | Some g -> g#update_ivt s_func check
 
     method is_iv_cond cond = 
       match current_dcfg with
         | None -> false
         | Some g -> g#is_iv_cond cond
 
-    method add_g addr lhs rhs op' ty s_func check eeip= 
+    method add_g g check simplify = 
       match current_dcfg with
         | None -> ()
-        | Some g -> g#add_g addr lhs rhs op' ty s_func check eeip
-
-    method clean_gt = 
-      match current_dcfg with
-        | None -> ()
-        | Some g -> g#clean_gt
-
-    method is_gt_cond cond = 
-      match current_dcfg with
-        | None -> false
-        | Some g -> g#is_gt_cond cond
+        | Some dcfg -> dcfg#add_g g check simplify
 
     method add_bd eip exp d = (
       match current_dcfg with
         | None -> ()
         | Some g -> (g#add_bd eip exp d))
 
-    method check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child = 
-      match current_dcfg with
-        | None -> ([], 0L)
-        | Some g -> g#check_loopsum eip check s_func try_ext random_bit is_all_seen cur_ident get_t_child get_f_child self#add_loopsum_node
-
     (* A stack of useLoopsum? nodes on current path*)
+    (* (node_ident, loop_record)*)
     val mutable loop_enter_nodes = []
     val mutable snap_loop_enter_nodes = []
 
@@ -753,8 +744,23 @@ struct
          | None -> ()
          | Some g -> (g#mark_extra_all_seen loop_enter_nodes mark_all_seen is_all_seen get_t_child get_f_child))
 
-    method private add_loopsum_node n = 
-      loop_enter_nodes <- n::loop_enter_nodes
+    method is_loop_head eip =
+      match current_dcfg with
+        | None -> false
+        | Some dcfg -> dcfg#is_loop_head eip
+
+    method private add_loopsum_node ident l = 
+      loop_enter_nodes <- loop_enter_nodes@[(ident, l)]
+
+    method check_loopsum eip check simplify eval_int eval_cond if_expr_temp
+                                try_ext random_bit is_all_seen cur_ident 
+                                get_t_child get_f_child = 
+      match current_dcfg with
+        | None -> ([], 0L)
+        | Some dcfg -> 
+            dcfg#check_loopsum eip check simplify eval_int eval_cond if_expr_temp
+              try_ext random_bit is_all_seen cur_ident get_t_child get_f_child 
+              self#add_loopsum_node
 
     method simplify_exp typ e = e
 
@@ -973,33 +979,21 @@ struct
 		Hashtbl.add unique_eips eip ())));
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
-
-	(*add eip into dcfg*)
+       (*add eip into dcfg*)
+       (* TODO: merge duplicated apply function bellow and in srfm*)
        if self#started_symbolic then
          (match current_dcfg with
             | None -> ()
             | Some dcfg -> 
-                if eip >= text_start && eip <= text_end then ( 
-                  let msg = ref "" in
-                  let apply l = (
-                    match l with
-                      | h::l' -> (
-                          let (addr, exp) = h in 
-                            msg :=  !msg ^ Printf.sprintf "mem[0x%08Lx] = %s\n" addr (V.exp_to_string exp);
-                            let ty = Vine_typecheck.infer_type_fast exp in 
-                            let exp' = form_man#make_post_cond (self#simplify_exp ty exp) ty in
-                              self#store_exp addr exp' ty)
-                      |[] -> ()) 
-                  in
-                    match dcfg#add_node eip apply with
-                      | ExitLoop -> (				
-                          if !opt_trace_postcond && not (!msg = "") then 
-                            (Printf.eprintf "* Post condition:\n";
-                             Printf.eprintf "%s" !msg;
-                             Printf.eprintf "----------------------------------------------------------------------------\n";
-                            )
-                        )
-                      |_ -> ()));
+                if eip >= text_start && eip <= text_end then
+                  (let msg = ref "" in
+                     match dcfg#add_node eip with
+                       | ExitLoop -> (				
+                           if !opt_trace_postcond && not (!msg = "") then 
+                             (Printf.eprintf "* Post condition:\n";
+                              Printf.eprintf "%s" !msg;
+                              Printf.eprintf "----------------------------------------------------------------------------\n";))
+                       |_ -> ()));
       List.iter apply_eip_hook extra_eip_hooks;
       self#watchpoint;
       self#event_to_history eip;
@@ -1042,20 +1036,17 @@ struct
 	    -> true
       in
       let pop_callstack esp =
-        let reset_dcfg (_, _, eip, _) = 
-          try
-            let g = Hashtbl.find dcfgs eip in
-              (match g with
-                 | Some dcfg -> dcfg#reset
-                 | _ -> ())
-          with
-            | Not_found -> ()
+        let reset_dcfg head = 
+          match (Hashtbl.find_opt dcfgs head) with
+            | Some dcfg -> dcfg#reset
+            | None -> ()
         in
 	while match call_stack with
 	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
 	  | _ -> false 
         do
-          if !opt_use_loopsum then reset_dcfg (List.hd call_stack);
+          if !opt_use_loopsum then 
+            let (_, _, head, _) = List.hd call_stack in reset_dcfg head;
           call_stack <- List.tl call_stack
         done
       in
@@ -1096,28 +1087,24 @@ struct
 	      (* TODO: add similar parsing for ARM mnemonics *)
 	      "not a jump"
       in
-     let switch_dcfg eip = 
-        let next_dcfg = Hashtbl.find dcfgs eip in
-          if current_dcfg != next_dcfg 
-          then (
-            current_dcfg <- next_dcfg)
+      let switch_dcfg eip =
+        match (Hashtbl.find_opt dcfgs eip) with
+          | Some dcfg -> 
+              if current_dcfg != Some dcfg then 
+                current_dcfg <- Some dcfg
+          | None -> ()
       in
         match kind with
           | "call" ->
               let esp = self#get_esp in
-              let (*depth = List.length call_stack and*) ret_addr = get_retaddr esp
+              let ret_addr = get_retaddr esp
               in
-                (*for i = 0 to depth - 1 do Printf.eprintf " " done;
-                 Printf.eprintf
-                 "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
-                 last_eip eip ret_addr;*)
+                stackpointer <- esp;
                 call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
                 if !opt_use_loopsum then
-                  (if not (Hashtbl.mem dcfgs eip)
-                   then (
-                     let dcfg = new dynamic_cfg eip in
-                       Hashtbl.replace dcfgs eip (Some dcfg);
-                   );
+                  (if not (Hashtbl.mem dcfgs eip) then
+                     (let dcfg = new dynamic_cfg eip in
+                        Hashtbl.replace dcfgs eip dcfg);
                    switch_dcfg eip);
                 (* If we had a command-line option for expensive sanity
                  checks, we could use it here. For now, just comment it
@@ -1129,23 +1116,14 @@ struct
                 pop_callstack (Int64.sub esp size);
                 if false then
                   g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-                (*let depth = List.length call_stack in
-                 for i = 0 to depth - 2 do Printf.eprintf " " done;
-                 Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
-                 last_eip eip;*)
                 pop_callstack esp;
                 if false then
                   g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-                (*switch dcfg*)
-                if !opt_use_loopsum && List.length call_stack != 0 then (
-                  let (_, last, eip, _) = List.hd call_stack in
-                    if Hashtbl.mem dcfgs eip
-                    then (
-                      switch_dcfg eip;
-                    (*Printf.eprintf "Now in the procedure start at 0x%08Lx\n" call_to*)
-                    )
-                    else failwith "attempt to access an unknown activation" 
-                );
+                stackpointer <- esp;
+                if !opt_use_loopsum && List.length call_stack != 0 then
+                  (let (_, last, eip, _) = List.hd call_stack in
+                     if Hashtbl.mem dcfgs eip then switch_dcfg eip
+                     else failwith "attempt to access an unknown procedure");
           | _ -> ()
 
     method jump_hook last_insn last_eip eip =
@@ -2120,10 +2098,8 @@ struct
       snap_dcfg <- current_dcfg;
       snap_call_stack <- call_stack;
       snap_loop_enter_nodes <- loop_enter_nodes;
-      Hashtbl.iter (fun hd g ->
-                      match g with
-                        | None -> ()
-                        | Some dcfg -> dcfg#make_snap
+      Hashtbl.iter (fun head dcfg -> 
+                      dcfg#make_snap;
       ) dcfgs;
       List.iter snap_handler !special_handler_list_ref
 
@@ -2171,10 +2147,7 @@ struct
         fuzz_finish_reasons <- [];
         disqualified <- false;
         current_dcfg <- snap_dcfg;
-        Hashtbl.iter (fun hd g ->
-                        match g with
-                          | None -> ()
-                          | Some dcfg -> dcfg#reset_snap
+        Hashtbl.iter (fun hd dcfg -> dcfg#reset_snap
         ) dcfgs;
         if !opt_trace_loopsum_detailed then
           List.iter 
@@ -2188,9 +2161,6 @@ struct
                Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
             ) call_stack;
         loop_enter_nodes <- snap_loop_enter_nodes;
-        (*match (current_dcfg, snap_dcfg) with
-         | (Some c, Some s) -> (Printf.printf "reset: 0x%08Lx -> 0x%08Lx\n" (c#get_header) (s#get_header))
-         | _ -> (Printf.printf "reset: /_>");*)
         Hashtbl.clear event_details;
         event_history <- [];
         List.iter reset !special_handler_list_ref

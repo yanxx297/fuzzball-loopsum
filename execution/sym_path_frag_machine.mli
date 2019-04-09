@@ -278,32 +278,36 @@ sig
     method set_start_eip : int64 -> unit
     method get_stmt : Vine.stmt list 
     method set_text_range : int64 -> int64 -> unit
+    method get_stack_base_addr: int64
     method is_guard : int64 -> int64 -> bool * int64
     method branch_heur : int64 -> int64 -> int64 option
     method in_loop : int64 -> bool
     method get_loop_head : int64
     method add_iv : int64 -> Vine.exp -> unit
-    method clean_ivt : unit
-    method renew_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
+    method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
     method print_dt : unit
     method is_iv_cond : Vine.exp -> bool
-    method add_g : int64 -> Vine.exp -> Vine.exp -> Vine.binop_type -> 
-         Vine.typ -> (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> 
-         int64 -> unit
-    method clean_gt : unit
-    method is_gt_cond : Vine.exp -> bool
+    method add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
+      (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
     method add_bd : int64 -> Vine.exp -> int64 -> unit
     method check_loopsum : int64 ->
-    	(Vine.exp -> bool) ->
-    	(Vine.typ -> Vine.exp -> Vine.exp) ->
-    	((bool -> Vine.exp) ->
-      	 (bool -> Vine.exp -> bool) ->
-      	 (bool -> unit) ->
-      	 (unit -> bool) -> (bool -> bool) -> int -> bool) -> 
-    	bool -> (int -> bool) -> int -> (int -> int) -> (int -> int) ->
-    	(int64 * Vine.exp) list * int64
+    (Vine.exp -> bool) ->
+    (Vine.typ -> Vine.exp -> Vine.exp) ->
+    (int64 -> Vine.typ -> Vine.exp) ->
+    (Vine.exp -> Vine.exp) ->
+    (Vine.var ->
+       (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+       Vine.exp option * Vine.exp option * Vine.binop_type ->
+       (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+    ((bool -> Vine.exp) ->
+      (bool -> Vine.exp -> bool) ->
+      (bool -> unit) -> (unit -> bool) -> (bool -> bool) -> int -> bool) ->
+    bool ->
+    (int -> bool) ->
+    int -> (int -> int) -> (int -> int) -> (int64 * Vine.exp) list * int64  
     method mark_extra_all_seen : (int -> unit) ->
         (int -> bool) -> (int -> int) -> (int -> int) -> unit
+    method is_loop_head : int64 -> bool
     method simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
 
     method eval_cjmp_targ: int64 ->  int64  ->  D.t  ->  Vine.exp  ->  bool
