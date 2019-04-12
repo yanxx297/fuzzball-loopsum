@@ -662,6 +662,7 @@ struct
     val mutable current_dcfg = None
 
     val mutable stackpointer = -1L
+    val mutable snap_stackpointer = -1L
 
     method get_stack_base_addr = stackpointer
 
@@ -2098,6 +2099,7 @@ struct
       snap_dcfg <- current_dcfg;
       snap_call_stack <- call_stack;
       snap_loop_enter_nodes <- loop_enter_nodes;
+      snap_stackpointer <- stackpointer;
       Hashtbl.iter (fun head dcfg -> 
                       dcfg#make_snap;
       ) dcfgs;
@@ -2161,6 +2163,7 @@ struct
                Printf.printf "After: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
             ) call_stack;
         loop_enter_nodes <- snap_loop_enter_nodes;
+        stackpointer <- snap_stackpointer;
         Hashtbl.clear event_details;
         event_history <- [];
         List.iter reset !special_handler_list_ref
