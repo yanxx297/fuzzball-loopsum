@@ -1098,8 +1098,14 @@ struct
         match kind with
           | "call" ->
               let esp = self#get_esp in
+              let depth = List.length call_stack in
               let ret_addr = get_retaddr esp
               in
+                if !opt_trace_callstack then
+                  (for i = 0 to depth - 1 do Printf.eprintf " " done;
+                   Printf.eprintf
+                     "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
+                     last_eip eip ret_addr);                
                 stackpointer <- esp;
                 call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
                 if !opt_use_loopsum then
@@ -1117,21 +1123,26 @@ struct
                 pop_callstack (Int64.sub esp size);
                 if false then
                   g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-                pop_callstack esp;
-                if false then
-                  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
-                stackpointer <- esp;
-                if !opt_use_loopsum && List.length call_stack != 0 then
-                  (let (_, last, eip, _) = List.hd call_stack in
-                     if Hashtbl.mem dcfgs eip then switch_dcfg eip
-                     else failwith "attempt to access an unknown procedure");
+                if !opt_trace_callstack then
+                  (let depth = List.length call_stack in
+                     for i = 0 to depth - 2 do Printf.eprintf " " done;
+                     Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
+                       last_eip eip);
+                  pop_callstack esp;
+                  if false then
+                    g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
+                  stackpointer <- esp;
+                  if !opt_use_loopsum && List.length call_stack != 0 then
+                    (let (_, last, eip, _) = List.hd call_stack in
+                       if Hashtbl.mem dcfgs eip then switch_dcfg eip
+                       else failwith "attempt to access an unknown procedure");
           | _ -> ()
 
     method jump_hook last_insn last_eip eip =
       (* I think this might be the right place to add the indirect table updates
 	 JTT *)
       Indirect_target_logger.add last_eip eip;
-      if !opt_trace_callstack then
+      if !opt_trace_callstack or !opt_use_loopsum then
 	self#trace_callstack last_insn last_eip eip
 
     method run_jump_hooks last_insn last_eip eip =

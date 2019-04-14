@@ -532,8 +532,7 @@ let cmdline_opts =
     ("-use-loopsum",
      (Arg.Unit
         (fun () ->
-           opt_use_loopsum := true;
-           opt_trace_callstack := true;)),
+           opt_use_loopsum := true;)),
      " Turn on loop summarization");
     ("-trace-loopsum",
      (Arg.Unit

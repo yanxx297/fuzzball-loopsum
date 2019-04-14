@@ -337,7 +337,8 @@ class loop_record tail head g= object(self)
           let (offset, v0, v, v', dv) = iv in
             if not (v' = exp) then self#replace_iv (offset, v0, v, exp, dv)
       | None -> 
-          if iter = 2 then ivt <- ivt @ [(offset, exp, exp, exp, None)]
+          (Printf.eprintf "Add new iv with offset = %Lx\n" offset;
+          if iter = 2 then ivt <- ivt @ [(offset, exp, exp, exp, None)])
 
   (*Guard table: (eip, op, ty, D0_e, D, dD, b, exit_eip)*)
   (*D0_e: the code exp of the jump condition's location*)
@@ -737,7 +738,7 @@ class loop_record tail head g= object(self)
                                     let v0 = load_iv offset ty in
                                       match dv_opt with
                                         | Some dv -> 
-                                            (offset, V.BinOp(V.PLUS, v0, V.BinOp(V.TIMES, ec, dv)))
+                                            (offset, simplify ty (V.BinOp(V.PLUS, v0, V.BinOp(V.TIMES, ec, dv))))
                                         | None -> failwith ""
                ) ivt in 
                  (vt, eeip))
@@ -795,7 +796,7 @@ class loop_record tail head g= object(self)
 
   (* Print loopsum status when exiting a loop*)
   method finish_loop = 
-    if !opt_trace_loop_detailed then
+    if !opt_trace_loopsum then
       (let ivt_len = List.length ivt in
        let gt_len = List.length gt in
          Printf.eprintf "* GT size: %d\n" gt_len;
@@ -815,13 +816,11 @@ class loop_record tail head g= object(self)
   method make_snap =
     snap_bt <- bt;    
     iter_snap <- iter;
-    Printf.eprintf "save iter %d\n" iter;
     loopsum_status_snap <- loopsum_status
 
   method reset_snap =
     bt <- snap_bt;
     iter <- iter_snap;
-    Printf.eprintf "reset iter to %d\n" iter;
     loopsum_status <- loopsum_status_snap
 
   initializer 
@@ -874,7 +873,7 @@ class dynamic_cfg (eip : int64) = object(self)
          mark_last_all_seen node)
     in
       if !opt_trace_loopsum then
-        Printf.eprintf "Current path covered %d loops\n" (List.length loop_enter_nodes);
+        Printf.eprintf "Current path covered %d loop(s)\n" (List.length loop_enter_nodes);
       List.iter (fun (node, loop) ->
                    if is_all_seen (get_f_child node) then
                      let num = List.length (loop#get_lss) in

@@ -1364,8 +1364,11 @@ struct
                  let (offset, exp) = h in
                  let addr = Int64.add self#get_stack_base_addr offset in
                  let ty = Vine_typecheck.infer_type_fast exp in 
-                 let rhs = form_man#make_post_cond (self#simplify_exp ty exp) ty in
+                 let rhs = form_man#make_post_cond exp ty in
                    self#store_exp addr rhs ty;
+                   if !opt_trace_loopsum then
+                     Printf.eprintf "Update IVT mem[%Lx - %Lx = %Lx] to %s\n" 
+                       self#get_stack_base_addr offset addr (V.exp_to_string exp);
                    loop l'
                )
              | [] -> ())
