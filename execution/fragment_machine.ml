@@ -751,7 +751,7 @@ struct
         | Some dcfg -> dcfg#is_loop_head eip
 
     method private add_loopsum_node ident l = 
-      loop_enter_nodes <- loop_enter_nodes@[(ident, l)]
+      loop_enter_nodes <- (ident, l)::loop_enter_nodes
 
     method check_loopsum eip check simplify eval_int eval_cond if_expr_temp
                                 try_ext random_bit is_all_seen cur_ident 
