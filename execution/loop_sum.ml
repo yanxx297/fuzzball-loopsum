@@ -443,7 +443,12 @@ class loop_record tail head g= object(self)
                   )
               | _ -> failwith "invalid guard operation")
          in
-           simplify ty res)
+           (match (check d_cond, check dd_cond) with
+              | (true, false) -> (d_cond, V.UnOp(V.NOT, dd_cond), res) 
+              | (false, true) -> (V.UnOp(V.NOT, d_cond), dd_cond, res)
+              | (true, true) -> (d_cond, dd_cond, res)
+              | (false, false) -> 
+                  (V.UnOp(V.NOT, d_cond), V.UnOp(V.NOT, dd_cond), res)))
     | _ -> failwith "" 
 
   (* Given lhs, rhs and op, compute a distance (D)*)
@@ -582,76 +587,44 @@ class loop_record tail head g= object(self)
       lss <- lss @ [(ivt, gt, geip)]
     else let msg = Printf.sprintf "%Lx is not a guard" geip in failwith msg
 
-  method private compute_precond bt gt min_eip min_ec check eval_cond simplify if_expr_temp =
-    (* Construct the condition that Guard_i is the one with minimum EC*)
-    let min_ec_cond min_eip gt =
-      let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
-      let after_min = ref false in
-        List.iter (fun g ->
-                     let (eip, _, _, _, _, _, _, _) = g in
-                       if not (eip = min_eip) then
-                         (let ec = self#compute_ec g check eval_cond simplify if_expr_temp in
-                            if !after_min then
-                              res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLE, min_ec, ec))
-                            else
-                              res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLT, min_ec, ec))
-                         )
-                       else after_min := true
-        ) gt;
-        !res
-    in
-    (* Construct the condition to make sure D0 != 0 and dD != 0 *)
-    (* which means current Path can enter then exit from this loop *)
-    let rec guard_cond l = 
-      (match l with
-        | g::l' -> (
-            let (_, op, ty, d0_e, d_opt, dd_opt, b, eeip) = g in
-            let d0_opt = self#compute_distance_from_scratch g check eval_cond simplify if_expr_temp in
-            let cond = 
-              (match (d0_opt, dd_opt) with
-                 | (Some d0, Some dd) -> 
-                     (match op with
-                        | V.EQ -> (V.BinOp(V.BITAND, 
-                                           V.BinOp(V.NEQ, d0, V.Constant(V.Int(ty, 0L))), 
-                                           V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | V.NEQ -> (V.BinOp(V.BITAND, 
-                                            V.BinOp(V.EQ, d0, V.Constant(V.Int(ty, 0L))), 
-                                            V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | V.SLT -> (V.BinOp(V.BITAND, 
-                                            V.BinOp(V.SLE, V.Constant(V.Int(ty, 0L)), d0), 
-                                            V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | V.SLE -> (V.BinOp(V.BITAND, 
-                                            V.BinOp(V.SLT, V.Constant(V.Int(ty, 0L)), d0), 
-                                            V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | V.LT -> (V.BinOp(V.BITAND, 
-                                           V.BinOp(V.LE, V.Constant(V.Int(ty, 0L)), d0), 
-                                           V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | V.LE -> (V.BinOp(V.BITAND, 
-                                           V.BinOp(V.LT, V.Constant(V.Int(ty, 0L)), d0), 
-                                           V.BinOp(V.NEQ, dd, V.Constant(V.Int(ty, 0L)))))
-                        | _ -> failwith "Invalid operator in compute_enter_cond")
-                 | _ -> (Printf.eprintf "Invalid GT entry in compute_enter_cond: no D0/dD\n"; raise LoopsumNotReady)) 
-            in
-              V.BinOp(V.BITAND, cond, (guard_cond l')))
-        | [] -> V.Constant(V.Int(V.REG_1, 1L)))
-    in
-    (* Compute a conjunction of all conditions in current branch table*)
-    let branch_cond bt =
-      let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
-        Hashtbl.iter (fun _ (cond, _) ->
-                        res := V.BinOp(V.BITAND, !res, cond)
-        ) bt;
-        !res
-    in
-      V.BinOp(V.BITAND, V.BinOp(V.BITAND, (guard_cond gt), (branch_cond bt)), (min_ec_cond min_eip gt))
-
-  method private compute_precond_from_scratch loopsum check eval_cond simplify if_expr_temp =
+  method private compute_precond loopsum check eval_cond simplify if_expr_temp =
     let (_, gt, geip) = loopsum in
     let min_g_opt = self#gt_search gt geip in 
       match min_g_opt with
         | Some min_g ->
-            (let ec = self#compute_ec min_g check eval_cond simplify if_expr_temp in
-             self#compute_precond bt gt geip ec check eval_cond simplify if_expr_temp)
+            (let (d_cond, dd_cond, min_ec) = 
+               self#compute_ec min_g check eval_cond simplify if_expr_temp 
+             in
+             (* Construct the condition that Guard_i is the one with minimum EC*)
+             let min_ec_cond geip gt =
+               let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
+               let after_min = ref false in
+                 List.iter (fun g ->
+                              let (eip, _, _, _, _, _, _, _) = g in
+                                if not (eip = geip) then
+                                  (let (_, _, ec) = self#compute_ec g check eval_cond simplify if_expr_temp in
+                                     if !after_min then
+                                       res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLE, min_ec, ec))
+                                     else
+                                       res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLT, min_ec, ec))
+                                  )
+                                else after_min := true
+                 ) gt;
+                 !res
+             in
+             (* Compute a conjunction of all conditions in current branch table*)
+             let branch_cond bt =
+               let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
+                 Hashtbl.iter (fun _ (cond, _) ->
+                                 res := V.BinOp(V.BITAND, !res, cond)
+                 ) bt;
+                 !res
+             in
+               V.BinOp(V.BITAND, 
+                       V.BinOp(V.BITAND, 
+                               V.BinOp(V.BITAND, d_cond, dd_cond), 
+                               (branch_cond bt)), 
+                       (min_ec_cond geip gt)))
         | _ -> failwith ""
 
   val mutable i = 0	
@@ -695,7 +668,7 @@ class loop_record tail head g= object(self)
       match l with
         | h::rest -> 
             (if cur = -1 || not (is_all_seen (get_t_child cur)) then
-               let precond = self#compute_precond_from_scratch h check eval_cond simplify if_expr_temp in
+               let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
                  V.BinOp(V.BITOR, precond, (get_precond rest (get_f_child cur)))
              else 
                get_precond rest (get_f_child cur)
@@ -732,7 +705,7 @@ class loop_record tail head g= object(self)
           | None -> failwith ""
           | Some g ->
               (let (_, _, _, _, _, _, _, eeip) = g in
-               let ec = self#compute_ec g check eval_cond simplify if_expr_temp in 
+               let (_, _, ec) = self#compute_ec g check eval_cond simplify if_expr_temp in 
                let vt = List.map (fun (offset, v, _, _, dv_opt) ->
                                     let ty = Vine_typecheck.infer_type_fast v in
                                     let v0 = load_iv offset ty in
@@ -747,7 +720,7 @@ class loop_record tail head g= object(self)
       let feasible = ref [] in
         List.iteri (fun id h ->
                       let (ivt, gt, geip) = h in
-                      let precond = self#compute_precond_from_scratch h check eval_cond simplify if_expr_temp in
+                      let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
                         if check precond then feasible := (id, ivt, gt, geip)::!feasible
         ) l;
         let all = List.length !feasible in
