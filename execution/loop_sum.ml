@@ -610,6 +610,7 @@ class loop_record tail head g= object(self)
                                   )
                                 else after_min := true
                  ) gt;
+                 Printf.eprintf "min_ec_cond = %s\n" (V.exp_to_string !res);
                  !res
              in
              (* Compute a conjunction of all conditions in current branch table*)
@@ -618,6 +619,7 @@ class loop_record tail head g= object(self)
                  Hashtbl.iter (fun _ (cond, _) ->
                                  res := V.BinOp(V.BITAND, !res, cond)
                  ) bt;
+                 Printf.eprintf "branch_cond = %s\n" (V.exp_to_string !res);
                  !res
              in
                V.BinOp(V.BITAND, 
@@ -657,7 +659,7 @@ class loop_record tail head g= object(self)
    condition and return the updated values and addrs of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
   (*TODO: loopsum preconds should be add to path cond*)
-  method check_loopsum eip check simplify load_iv eval_cond if_expr_temp
+  method check_loopsum eip check (add_pc: V.exp -> unit) simplify load_iv eval_cond if_expr_temp
             try_ext (random_bit:bool) (is_all_seen: int -> bool) (cur_ident: int) 
             get_t_child get_f_child (add_node: int -> unit) = 
     let trans_func (_ : bool) = V.Unknown("unused") in
@@ -679,15 +681,16 @@ class loop_record tail head g= object(self)
       let cond = get_precond lss (get_t_child cur_ident) in
         if !opt_trace_loopsum_detailed then
           Printf.eprintf "Check all preconds: %s\n" (V.exp_to_string cond);
-        if check cond then true
+        if check cond then (add_pc cond; true)
         (* TODO: uncomment the code bellow to enable random decision*)
+        (* and call add_pc accordingly*)
         (*
          (Printf.eprintf "It is possible to use loopsum\n";
          let rand = random_bit in 
          Printf.eprintf "random: %B\n" rand;
          rand)
          *)
-        else false
+        else (add_pc (V.UnOp(V.NOT, cond)); false)
     in
     let use_loopsum () =
       (add_node cur_ident;
@@ -721,12 +724,12 @@ class loop_record tail head g= object(self)
         List.iteri (fun id h ->
                       let (ivt, gt, geip) = h in
                       let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
-                        if check precond then feasible := (id, ivt, gt, geip)::!feasible
+                        if check precond then feasible := (precond, id, ivt, gt, geip)::!feasible
         ) l;
         let all = List.length !feasible in
           if all <= 0 then failwith "Inconsistency between use_loopsum and choose_loopsum\n";
           let n = Random.int all in
-          let (id, ivt, gt, geip) = (List.nth !feasible n) in
+          let (precond, id, ivt, gt, geip) = (List.nth !feasible n) in
           let (vt, eeip) = compute_iv_update (ivt, gt, geip) in
             (id, vt, eeip)
     in
@@ -953,7 +956,7 @@ class dynamic_cfg (eip : int64) = object(self)
 
   method is_loop_head eip = Hashtbl.mem looplist eip 
 
-  method check_loopsum eip check simplify load_iv eval_cond if_expr_temp
+  method check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
                               try_ext random_bit is_all_seen cur_ident get_t_child
                               get_f_child add_loopsum_node = 
     let trans_func (_ : bool) = V.Unknown("unused") in
@@ -964,7 +967,7 @@ class dynamic_cfg (eip : int64) = object(self)
       match loop with
         | Some l -> 
             (let add_node ident = add_loopsum_node ident l in 
-               l#check_loopsum eip check simplify load_iv eval_cond if_expr_temp
+               l#check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
                  try_ext random_bit is_all_seen cur_ident get_t_child get_f_child 
                  add_node)
         | None -> 

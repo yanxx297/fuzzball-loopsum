@@ -292,6 +292,7 @@ sig
     method add_bd : int64 -> Vine.exp -> int64 -> unit
     method check_loopsum : int64 ->
     (Vine.exp -> bool) ->
+    (Vine.exp -> unit) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->

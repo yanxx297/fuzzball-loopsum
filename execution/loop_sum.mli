@@ -51,6 +51,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method update_loopsum : unit
   method check_loopsum : int64 ->
     (Vine.exp -> bool) ->
+    (Vine.exp -> unit) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->
@@ -85,6 +86,7 @@ class dynamic_cfg : int64 -> object
   method reset_snap : unit
   method check_loopsum : int64 ->
     (Vine.exp -> bool) ->
+    (Vine.exp -> unit) ->
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->
