@@ -1357,7 +1357,7 @@ struct
           e
       in
       (* Apply loop summarization to IVs in IVT*)
-      let apply_loopsum vt eeip = 
+      let apply_loopsum vt = 
         let rec loop l = 
           (match l with
              | h::l' -> ( 
@@ -1374,10 +1374,7 @@ struct
              | [] -> ())
         in
           loop vt;
-          self#set_eip eeip;
-          Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
       in
-      let res = spfm#run() in
         if self#is_loop_head eip then 
           (let (vt, eeip) = self#check_loopsum eip check self#simplify_exp 
                               load_iv eval_cond if_expr_temp try_ext 
@@ -1385,12 +1382,16 @@ struct
                               dt#get_t_child dt#get_f_child 
            in
              (match vt with
-                | [] -> ()
+                | [] -> spfm#run()
                 | _ -> 
                     (if !opt_trace_loopsum then
                        Printf.eprintf "Apply loopsum at 0x%Lx\n" eip;
-                     apply_loopsum vt eeip)));
-        res
+                     apply_loopsum vt;
+                     let res = spfm#run() in
+                       self#set_eip eeip;
+                       Printf.printf "After applying loopsum at 0x%Lx, set eip to 0x%Lx\n" eip eeip;
+                       res)))
+        else spfm#run()
 
     val mutable extra_store_hooks = []
     val mutable last_set_null = Hashtbl.create 100
