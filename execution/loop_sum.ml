@@ -720,17 +720,25 @@ class loop_record tail head g= object(self)
                  (vt, eeip))
     in
     let choose_loopsum l =
-      let feasible = ref [] in
-        List.iteri (fun id h ->
-                      let (ivt, gt, geip) = h in
-                      let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
-                        if check precond then feasible := (precond, id, ivt, gt, geip)::!feasible
-        ) l;
-        let all = List.length !feasible in
+      let feasibles = ref [] in
+      let rec get_feasible id l conds = 
+        (match l with
+           | h::rest ->
+               (let (ivt, gt, geip) = h in
+                let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
+                  if check (V.BinOp(V.BITAND, precond, conds)) then
+                    feasibles := (V.BinOp(V.BITAND, precond, conds), 
+                                  id, ivt, gt, geip)::!feasibles;
+                  get_feasible (id+1) rest (V.BinOp(V.BITAND, conds, V.UnOp(V.NOT, precond))))
+           | [] -> ())
+      in
+        get_feasible 0 l (V.Constant(V.Int(V.REG_1, 1L)));
+        let all = List.length !feasibles in
           if all <= 0 then failwith "Inconsistency between use_loopsum and choose_loopsum\n";
           let n = Random.int all in
-          let (precond, id, ivt, gt, geip) = (List.nth !feasible n) in
+          let (loopsum_cond, id, ivt, gt, geip) = (List.nth !feasibles n) in
           let (vt, eeip) = compute_iv_update (ivt, gt, geip) in
+            add_pc loopsum_cond;
             (id, vt, eeip)
     in
     let extend_with_loopsum l id =
