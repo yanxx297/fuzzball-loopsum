@@ -987,21 +987,13 @@ struct
          (match current_dcfg with
             | None -> ()
             | Some dcfg -> 
-                if eip >= text_start && eip <= text_end then
-                  (let msg = ref "" in
-                     match dcfg#add_node eip with
-                       | ExitLoop -> (				
-                           if !opt_trace_postcond && not (!msg = "") then 
-                             (Printf.eprintf "* Post condition:\n";
-                              Printf.eprintf "%s" !msg;
-                              Printf.eprintf "----------------------------------------------------------------------------\n";))
-                       |_ -> ()));
-      List.iter apply_eip_hook extra_eip_hooks;
-      self#watchpoint;
-      self#event_to_history eip;
-      Hashtbl.clear event_details;
-      event_count <- 0;
-      ()
+                if eip >= text_start && eip <= text_end then ignore(dcfg#add_node eip));
+       List.iter apply_eip_hook extra_eip_hooks;
+       self#watchpoint;
+       self#event_to_history eip;
+       Hashtbl.clear event_details;
+       event_count <- 0;
+       ()
 
     method get_eip =
       match !opt_arch with

@@ -51,6 +51,9 @@ let split_cond e b if_expr_temp =
                  (fun (v: V.var) -> 
                     Printf.eprintf "Fail to unfold %s\n" (V.exp_to_string e);
                     ignore(failwith "")))
+          (* Ignore this expr if it's True or False *)
+          | V.Constant(V.Int(V.REG_1, 1L)) 
+          | V.Constant(V.Int(V.REG_1, 0L)) -> (None, None, V.NEQ)
           | _ -> 
               Printf.eprintf "split_cond currently doesn't support this condition: %s\n" (V.exp_to_string e);
               (None, None, V.NEQ)
@@ -180,14 +183,9 @@ class simple_graph (h: int64) = object(self)
   method is_dom x d = 
     let dom = self#eip_to_set x in
     let res = DS.mem d dom in
-      if res = true then 
-        (Printf.eprintf "0x%08Lx -> 0x%08Lx " x d;
-         print_set dom);
-(*
-      (match res with
-        | true -> Printf.eprintf "0x%Lx dominates 0x%Lx[%d]\n" d x (DS.cardinal dom)
-        | false -> Printf.eprintf "0x%Lx doesn't dominate 0x%Lx[%d]\n" d x (DS.cardinal dom));
- *)
+      if !opt_trace_loop_detailed then
+        if res = true then Printf.eprintf "0x%08Lx dominate 0x%08Lx\n" x d
+        else Printf.eprintf "0x%08Lx does not dominate 0x%08Lx\n" x d;
       res
 
   method reset =
@@ -532,6 +530,7 @@ class loop_record tail head g= object(self)
                      | None -> ())))
 
   method print_ivt = 
+    Printf.eprintf "* Inductive Variables Table [%d]\n" (List.length ivt);
     List.iteri (fun i (offset, v0, v, v', dv) ->
                   Printf.eprintf "[%d]\tmem[sp+%Lx] = %s " i offset (V.exp_to_string v0);
                   match dv with
@@ -540,6 +539,7 @@ class loop_record tail head g= object(self)
     ) ivt
 
   method print_gt =
+    Printf.eprintf "* Guard Table [%d]\n" (List.length gt);
     List.iteri (fun i (eip, _, _, d0_e, _, _, _, eeip) ->
                   Printf.eprintf "[%d]\t0x%Lx\t%s\t0x%Lx\n" i eip (V.exp_to_string d0_e) eeip
     ) gt
@@ -570,7 +570,7 @@ class loop_record tail head g= object(self)
   method get_head = id
 
   method add_insn (eip:int64) = 
-    Hashtbl.add loop_body eip ()
+    Hashtbl.replace loop_body eip ()
 
   (* loopsum set (lss) = (ivt, gt, geip)*)
   (* geip := the guard to leave from*)
@@ -629,7 +629,6 @@ class loop_record tail head g= object(self)
                        (min_ec_cond geip gt)))
         | _ -> failwith ""
 
-  val mutable i = 0	
   method private compute_loop_body tail head g = 
     let rec inc_loopbody eip = 
       if not (eip = head || Hashtbl.mem loop_body eip) then 
@@ -640,20 +639,18 @@ class loop_record tail head g= object(self)
               let print_pred addr = Printf.eprintf "%Lx, " addr in
                 List.iter print_pred pred_list;
                 Printf.eprintf "} -> %Lx\n" eip);
-             List.iter inc_loopbody pred_list;
-             i <- 0
-        )
+           List.iter inc_loopbody pred_list)
     in
       inc_loopbody tail;
       self#add_insn tail;
       self#add_insn head;
-      let print_insn eip () = 
-        Printf.eprintf " %Lx\n" eip
-      in
-        if !opt_trace_loop then
-          Printf.eprintf "loopbody (%Lx -> %Lx) size: %d\n" tail head (Hashtbl.length loop_body);
-        if !opt_trace_loop_detailed then
-          Hashtbl.iter print_insn loop_body
+      if !opt_trace_loop then
+        (Printf.eprintf "Compute loopbody (%Lx -> %Lx) size: %d\n" tail head (Hashtbl.length loop_body);
+         let msg = ref "" in
+           Hashtbl.iter (fun eip _ ->
+                           msg := !msg ^ (Printf.sprintf "%Lx " eip)
+           ) loop_body;
+           Printf.eprintf "{%s}\n" !msg)
 
   (* Check whether any existing loop summarization that can fit current
    condition and return the updated values and addrs of IVs.
@@ -781,13 +778,8 @@ class loop_record tail head g= object(self)
   (* Print loopsum status when exiting a loop*)
   method finish_loop = 
     if !opt_trace_loopsum then
-      (let ivt_len = List.length ivt in
-       let gt_len = List.length gt in
-         Printf.eprintf "* GT size: %d\n" gt_len;
-         self#print_gt;
-         if ivt_len > 0 then
-           (Printf.eprintf "* IVT size: %d\n" (ivt_len);
-           self#print_ivt))
+      (self#print_gt;
+       self#print_ivt)
        
 
   method reset =
@@ -809,7 +801,6 @@ class loop_record tail head g= object(self)
 
   initializer 
     self#compute_loop_body tail head g;
-(*         Printf.eprintf "Create a loopRec\n" *)
 
 end
 
@@ -926,7 +917,7 @@ class dynamic_cfg (eip : int64) = object(self)
 
   (* Return bool * bool: whether enter a loop * whether enter a different loop*)	
   method private enter_loop src dest =
-    let msg = ref (Printf.sprintf "Enter loop from %Lx -> %Lx\n" src dest) in
+    let msg = ref "" in
     let is_backedge t h = g#is_dom t h in 
     let current_head = 
       (match (self#get_current_loop) with
@@ -1006,17 +997,21 @@ class dynamic_cfg (eip : int64) = object(self)
                    | Some lp -> 
                        (lp#inc_iter;
                         if not (Hashtbl.mem looplist eip) then Hashtbl.add looplist eip lp;
-                        if !opt_trace_loop then Printf.eprintf "%s" msg;
+                        if !opt_trace_loop then 
+                          Printf.eprintf "Enter loop from %Lx -> %Lx\n%s" 
+                            current_node eip msg;
                         if !opt_trace_loop_detailed then 
                           Printf.eprintf "Add head = %Lx to looplist\n" eip;
-                          Printf.eprintf "At iter %d, there are %d loops in list\n" lp#get_iter (Hashtbl.length looplist);
+                          Printf.eprintf "At iter %d, there are %d loop(s) in list\n" lp#get_iter (Hashtbl.length looplist);
                         EnterLoop)
                    | None -> ErrLoop)	
             | (_, in_loop, _, msg) ->
                 (match self#exit_loop eip with
                    (* Exit loop *)
                    | (Some l, true) ->
-                       (if !opt_trace_loop then Printf.eprintf "%sEnd on %d-th iter\n" msg (l#get_iter);
+                       (if !opt_trace_loop && (l#get_iter > 0) then 
+                          Printf.eprintf "%sEnd loop %Lx on %d-th iter\n" 
+                            msg (l#get_head) (l#get_iter);
                         if (l#get_status != Some true) && (self#get_iter > 2) && (l#get_lss = []) then
                           (l#save_lss current_node;
                            l#finish_loop);
