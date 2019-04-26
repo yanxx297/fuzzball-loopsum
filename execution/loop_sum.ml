@@ -585,7 +585,7 @@ class loop_record tail head g= object(self)
   method save_lss geip =
     if self#is_known_guard geip gt then
       lss <- lss @ [(ivt, gt, geip)]
-    else let msg = Printf.sprintf "%Lx is not a guard" geip in failwith msg
+    else Printf.eprintf "No lss saved since %Lx is not a guard\n" geip
 
   method private compute_precond loopsum check eval_cond simplify if_expr_temp =
     let (_, gt, geip) = loopsum in
