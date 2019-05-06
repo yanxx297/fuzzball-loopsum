@@ -2092,6 +2092,11 @@ struct
 
     val mutable snap_insn_count = 0L
 
+    val mutable last_eip = -1L
+    val mutable snap_last_eip = -1L
+    val mutable last_insn = "none"
+    val mutable snap_last_insn = "none"
+
     method make_snap () =
       List.iter (fun (m, _, _) -> m#make_snap ()) proc_list;
       (* XXX need to save the other reg_stores in proc_list too *)
@@ -2102,6 +2107,8 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       snap_dcfg <- current_dcfg;
       snap_call_stack <- call_stack;
+      snap_last_eip <- last_eip;
+      snap_last_insn <- last_insn;
       snap_loop_enter_nodes <- loop_enter_nodes;
       snap_stackpointer <- stackpointer;
       Hashtbl.iter (fun head dcfg -> 
@@ -2161,6 +2168,8 @@ struct
                Printf.printf "Before reset: esp:0x%08Lx, last eip:0x%08Lx, eip:0x%08Lx, return addr:0x%08Lx\n" esp last_eip eip ret_addr
             ) call_stack;
         call_stack <- snap_call_stack;
+        last_eip <- snap_last_eip;
+        last_insn <- snap_last_insn;
         if !opt_trace_loopsum_detailed then
           List.iter 
             (fun (esp, last_eip, eip, ret_addr) -> 
@@ -2837,8 +2846,6 @@ struct
 	    | Some sl ->
 		self#run_sl do_jump sl
 
-    val mutable last_eip = -1L
-    val mutable last_insn = "none"
     val mutable saw_jump = false
 
     val mutable stmt_num = -1
