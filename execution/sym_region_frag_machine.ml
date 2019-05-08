@@ -1379,7 +1379,7 @@ struct
         Printf.eprintf "Add %s to PC\n" (V.exp_to_string cond);
         self#add_to_path_cond cond 
       in
-        if self#is_loop_head eip then 
+        if self#is_loop_head eip && not self#before_first_branch then 
           (let (vt, eeip) = self#check_loopsum eip check add_pc self#simplify_exp 
                               load_iv eval_cond if_expr_temp try_ext 
                               dt#random_bit dt#is_all_seen dt#cur_ident
