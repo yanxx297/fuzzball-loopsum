@@ -276,37 +276,39 @@ class loop_record tail head g= object(self)
     let res = Hashtbl.mem iv_cond_t cond in
       res
 
+  (* At the end of each loop iteration, check each iv and clean ivt if *)
+  (* - any iv is changed by a different dV from previous, OR*)
+  (* - any iv is not changed in current iter *)      
   method update_ivt s_func check =
-    let len = List.length ivt in
-    let cmp (offset, v0, v, v', dv_opt) =
-      match iter with
-        | 2 -> self#replace_iv (offset, v0, v', v', dv_opt)
-        | _ -> (
-            let dv' = V.BinOp(V.MINUS, v', v) in 
-              match dv_opt with
-                | None -> self#replace_iv (offset, V.BinOp(V.MINUS, v0, dv'), v', v', Some dv')
-                | Some dv -> (
-                    let cond = V.BinOp(V.EQ, dv, dv') in
-                      (*NOTE: should check validity instead of satisfiability?*)
-                      (*NOTE2: should add dv == dv' to pre cond?*)
-                      if !opt_trace_loopsum_detailed then 
-                        Printf.eprintf "iv cond (full): %s \n" (V.exp_to_string cond);
-                      let cond' = simplify_cond s_func cond in
-                        (if !opt_trace_ivt then 
-                           Printf.eprintf "IV cond (simplified): %s \n" (V.exp_to_string cond');
-                         match cond' with
-                           | V.Constant(V.Int(V.REG_1, 1L)) -> ()
-                           | V.Constant(V.Int(V.REG_1, 0L)) -> ivt <- []
-                           | _ ->
-                               (if check cond' then
-                                  Hashtbl.replace iv_cond_t cond ()
-                               else
-                                 ivt <- []));
-                        self#replace_iv (offset, v0, v', v', Some dv')))
+    let rec check_ivt l =
+      match l with
+        | iv::l' ->
+            (let (offset, v0, v, v', dv_opt) = iv in
+               if iter = 2 then (offset, v0, v', v', dv_opt)::(check_ivt l')
+               else if check (V.BinOp(V.EQ, v', v)) then check_ivt l'
+               else
+                 let dv' = V.BinOp(V.MINUS, v', v) in
+                   match dv_opt with
+                     | None -> 
+                         (offset, V.BinOp(V.MINUS, v0, dv'), v', v', Some dv')::(check_ivt l')
+                     | Some dv -> 
+                         (*NOTE: should check validity instead of satisfiability?*)
+                         (let cond = V.BinOp(V.EQ, dv, dv') in
+                          let cond' = simplify_cond s_func cond in
+                            (match cond' with
+                               | V.Constant(V.Int(V.REG_1, 1L)) -> 
+                                   (offset, v0, v', v', Some dv')::(check_ivt l')
+                               | V.Constant(V.Int(V.REG_1, 0L)) -> check_ivt l'
+                               | _ ->
+                                   (if check cond' then
+                                      (Hashtbl.replace iv_cond_t cond ();
+                                       (offset, v0, v', v', Some dv')::(check_ivt l'))
+                                    else check_ivt l'))))
+        | [] -> []
     in
-      if iter >= 2 then List.iter cmp ivt;
-      let len' = List.length ivt in
-        if (len' - len) < 0 then Some false else Some true 
+    let ivt' = check_ivt ivt in
+      if (List.length ivt') < (List.length ivt) then ivt <- []
+      else ivt <- ivt'
 
   method get_ivt = ivt
 
@@ -336,8 +338,9 @@ class loop_record tail head g= object(self)
           let (offset, v0, v, v', dv) = iv in
             if not (v' = exp) then self#replace_iv (offset, v0, v, exp, dv)
       | None -> 
-          (Printf.eprintf "Add new iv with offset = %Lx\n" offset;
-          if iter = 2 then ivt <- ivt @ [(offset, exp, exp, exp, None)])
+          if iter = 2 then 
+            (Printf.eprintf "Add new iv with offset = %Lx\n" offset;
+             ivt <- ivt @ [(offset, exp, exp, exp, None)])
 
   (*Guard table: (eip, op, ty, D0_e, D, dD, b, exit_eip)*)
   (*D0_e: the code exp of the jump condition's location*)
@@ -871,7 +874,7 @@ class dynamic_cfg (eip : int64) = object(self)
   method update_ivt s_func check = 
     let loop = self#get_current_loop in
       match loop with
-        | None -> (None)
+        | None -> ()
         | Some l -> l#update_ivt s_func check
 
   method add_iv addr exp =

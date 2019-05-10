@@ -26,7 +26,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method make_snap : unit
   method reset_snap : unit
   method get_ivt : (int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list
-  method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
+  method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> unit
   method is_iv_cond : Vine.exp -> bool
   method add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
     (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
@@ -78,7 +78,7 @@ class dynamic_cfg : int64 -> object
   method get_loop_head : int64
   method get_iter : int
   method add_iv : int64 -> Vine.exp -> unit
-  method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
+  method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> unit
   method is_iv_cond : Vine.exp -> bool
   method add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
     (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit

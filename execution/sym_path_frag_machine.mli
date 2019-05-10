@@ -284,7 +284,7 @@ sig
     method in_loop : int64 -> bool
     method get_loop_head : int64
     method add_iv : int64 -> Vine.exp -> unit
-    method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> bool option
+    method update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> unit
     method print_dt : unit
     method is_iv_cond : Vine.exp -> bool
     method add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->

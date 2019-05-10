@@ -2085,12 +2085,12 @@ struct
       let h = self#get_loop_head in
 	(*Printf.printf "jump_hook: 0x%08Lx | 0x%08Lx\n" h eip;*) 
 	if (eip = h) then
-          let check e = 
-            let typ = Vine_typecheck.infer_type_fast e in
-            let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
-              is_sat
-          in
-            ignore(spfm#update_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
+          (let check e = 
+             let typ = Vine_typecheck.infer_type_fast e in
+             let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
+               is_sat
+           in
+             spfm#update_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
       if !opt_check_for_ret_addr_overwrite then
 	self#update_ret_addrs last_insn last_eip eip;
 
