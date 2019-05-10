@@ -52,8 +52,9 @@ let split_cond e b if_expr_temp =
                     Printf.eprintf "Fail to unfold %s\n" (V.exp_to_string e);
                     ignore(failwith "")))
           (* Ignore this expr if it's True or False *)
-          | V.Constant(V.Int(V.REG_1, 1L)) 
-          | V.Constant(V.Int(V.REG_1, 0L)) -> (None, None, V.NEQ)
+          | V.Constant(V.Int(V.REG_1, b)) -> 
+              (Printf.eprintf "%s %Ld\n" msg b;
+                (None, None, V.NEQ))
           | _ -> 
               Printf.eprintf "split_cond currently doesn't support this condition: %s\n" (V.exp_to_string e);
               (None, None, V.NEQ)
@@ -395,12 +396,12 @@ class loop_record tail head g= object(self)
         (let d = (match self#compute_distance op ty lhs rhs check simplify with
                     | Some d -> 
                         assert(check (V.BinOp(V.NEQ, V.Constant(V.Int(ty, 0L)), d))); d
-                    | None -> failwith "")
+                    | None -> failwith "Cannot compute D")
          in
          let dd = (match dd_opt with
                      | Some dd -> 
                          assert(check (V.BinOp(V.NEQ, V.Constant(V.Int(ty, 0L)), dd))); dd
-                     | None -> failwith "Incomplete guard")
+                     | None -> failwith "Cannot compute Dd")
          in
          (* Check integer overflow by checking whether D and dD are both *)
          (* positive/negative, and compute EC with modified D and dD accordingly*)
@@ -447,7 +448,7 @@ class loop_record tail head g= object(self)
               | (true, true) -> (d_cond, dd_cond, res)
               | (false, false) -> 
                   (V.UnOp(V.NOT, d_cond), V.UnOp(V.NOT, dd_cond), res)))
-    | _ -> failwith "" 
+    | _ -> let msg = Printf.sprintf "Unable to split %s\n" (V.exp_to_string e) in failwith msg
 
   (* Given lhs, rhs and op, compute a distance (D)*)
   (* loop_cond := if true, stay in the loop*) 
