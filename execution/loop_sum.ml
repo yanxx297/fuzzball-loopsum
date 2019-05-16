@@ -45,18 +45,47 @@ let split_cond e b if_expr_temp =
                  Printf.eprintf "%s (js/jns):\n%s\n" msg (V.exp_to_string e);
                if b then (Some lhs, Some (V.UnOp(V.NEG, rhs)), V.SLT) 
                else (Some (V.UnOp(V.NEG, rhs)), Some lhs, V.SLE))
+          (* jae/jb *)
+          | V.BinOp(V.LT, (V.Constant(_) as lhs), rhs)
+          | V.BinOp(V.LT, lhs, (V.Constant(_) as rhs)) ->
+              (if !opt_trace_loopsum then
+                 Printf.eprintf "%s (jae/jb):\n%s\n" msg (V.exp_to_string e);
+               if b then (Some lhs, Some rhs, V.LT) else (Some rhs, Some lhs, V.LE))
+          (* ja/jbe *)
+          | V.BinOp(V.BITOR, V.BinOp(V.LT, _, _), V.BinOp(V.EQ, lhs, rhs)) ->
+              (if !opt_trace_loopsum then
+                 Printf.eprintf "%s (ja/jbe):\n%s\n" msg (V.exp_to_string e);
+               if b then (Some lhs, Some rhs, V.LE) else (Some rhs, Some lhs, V.LT))
           | V.Lval(V.Temp(var)) -> 
               (if_expr_temp var (fun e' -> split e' b) 
                  ((None: V.exp option), (None: V.exp option), V.NEQ) 
                  (fun (v: V.var) -> 
-                    Printf.eprintf "Fail to unfold %s\n" (V.exp_to_string e);
-                    ignore(failwith "")))
+                    let msg = 
+                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
+                    in ignore(failwith msg)))
+          (* Unwrap temps when they are part of the expression*)
+          | V.BinOp(V.LT, V.Lval(V.Temp(var)), c)
+          | V.BinOp(V.LT, c, V.Lval(V.Temp(var))) ->
+              (if_expr_temp var (fun e' -> split (V.BinOp(V.LT, c, e')) b) 
+                 ((None: V.exp option), (None: V.exp option), V.NEQ) 
+                 (fun (v: V.var) -> 
+                    let msg = 
+                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
+                    in failwith msg))
+          | V.BinOp(V.BITOR, V.Lval(V.Temp(var)), (V.BinOp(V.EQ, _, _) as cond)) ->
+              (if_expr_temp var (fun e' -> split (V.BinOp(V.BITOR, e', cond)) b) 
+                 ((None: V.exp option), (None: V.exp option), V.NEQ) 
+                 (fun (v: V.var) -> 
+                    let msg = 
+                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
+                    in failwith msg))
+          | V.Ite(e', _, _) -> (Printf.eprintf "Split ite %s to %s" (V.exp_to_string e) (V.exp_to_string e'); split e' b)
           (* Ignore this expr if it's True or False *)
           | V.Constant(V.Int(V.REG_1, b)) -> 
               (Printf.eprintf "%s %Ld\n" msg b;
                 (None, None, V.NEQ))
           | _ -> 
-              Printf.eprintf "split_cond currently doesn't support this condition: %s\n" (V.exp_to_string e);
+              Printf.eprintf "split_cond currently doesn't support this condition(%B): %s\n" b (V.exp_to_string e);
               (None, None, V.NEQ)
        ))
   in
