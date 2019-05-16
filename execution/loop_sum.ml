@@ -480,7 +480,9 @@ class loop_record tail head g= object(self)
               | (true, true) -> (d_cond, dd_cond, res)
               | (false, false) -> 
                   (V.UnOp(V.NOT, d_cond), V.UnOp(V.NOT, dd_cond), res)))
-    | _ -> let msg = Printf.sprintf "Unable to split %s\n" (V.exp_to_string e) in failwith msg
+    | _ -> 
+        (Printf.eprintf "Unable to split %s\n" (V.exp_to_string e);
+         raise Not_found)
 
   (* Given lhs, rhs and op, compute a distance (D)*)
   (* loop_cond := if true, stay in the loop*) 
@@ -708,7 +710,12 @@ class loop_record tail head g= object(self)
         | [] -> V.Constant(V.Int(V.REG_1, 0L))
     in
     let random_bit_gen () = 
-      let cond = get_precond lss (get_t_child cur_ident) in
+      let cond = 
+        (try 
+           get_precond lss (get_t_child cur_ident)
+         with
+           | Not_found -> V.Constant(V.Int(V.REG_1, 0L))) 
+      in
         if !opt_trace_loopsum_detailed then
           Printf.eprintf "Check all preconds: %s\n" (V.exp_to_string cond);
         if check cond then (add_pc cond; true)
