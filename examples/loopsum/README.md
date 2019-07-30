@@ -17,7 +17,9 @@ A running example that can demonstrate the benefit using loopsum in bug finding.
 
 To simplify this test, compile this example with ``-fno-stack-protector``
 ```bash
-gcc -m32 -fno-stack-protector ret-addr-overwrite.c -g -o ret-addr-overwrite
+gcc -m32 -no-pie -fno-stack-protector ret-addr-overwrite.c -g -o ret-addr-overwrite
+# Disable pie for some newer version gcc/ld
+# To simplify bug reproducing, also disable stack protector
 ```
 
 Pure symbolic execution
