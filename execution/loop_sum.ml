@@ -570,7 +570,7 @@ class loop_record tail head g= object(self)
                   Printf.eprintf "[%d]\tmem[sp+%Lx] = %s " i offset (V.exp_to_string v0);
                   match dv with
                     | Some d -> Printf.eprintf "\t(+ %s)\n" (V.exp_to_string d)
-                    | None -> Printf.eprintf "\n"
+                    | None -> Printf.eprintf "\t [dV N/A]\n"
     ) ivt
 
   method print_gt =
@@ -615,12 +615,20 @@ class loop_record tail head g= object(self)
 
   method set_lss s = lss <- s
 
-  (* Save current (ivt, gt, geip) to a new lss *)
+  (* Save current (ivt, gt, geip) to a new lss if valid*)
   (* Call this function when exiting a loop *)
+  (* TODO: should also check invalid GT ?*)
   method save_lss geip =
-    if self#is_known_guard geip gt then
-      lss <- lss @ [(ivt, gt, geip)]
-    else Printf.eprintf "No lss saved since %Lx is not a guard\n" geip
+    if not (self#is_known_guard geip gt) then
+      Printf.eprintf "No lss saved since %Lx is not a guard\n" geip
+    else
+      let all_valid = ref true in
+        List.iter (fun iv ->
+                     let (_, _, _, _, dv) = iv in
+                       if dv = None then all_valid := false 
+        ) ivt;
+        if !all_valid then lss <- lss @ [(ivt, gt, geip)]
+        else Printf.eprintf "No lss saved since some IV invalid"
 
   method private compute_precond loopsum check eval_cond simplify if_expr_temp =
     let (_, gt, geip) = loopsum in
