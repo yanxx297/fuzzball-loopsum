@@ -39,7 +39,7 @@ http://groups.google.com/group/bitblaze-users
 
 ## Loop Summarization
 
-### Bytecode Compilation 
+### Bytecode Compilation
 Currently we cannot compile bytecode FuzzBALL because recent change in OCaml break it.
 As a workaround, we turn off warning errors.
 Note that for now we still need to rerun the last command with additional option added.
@@ -47,25 +47,28 @@ See commit [3bbe3a5](https://github.com/yanxx297/fuzzball-loopsum/commit/3bbe3a5
 
 ### Test Loop Summarization
 ```bash
-../../exec_utils/fuzzball -use-loopsum -trace-loop -trace-decisions -trace-iterations \ 
+../../exec_utils/fuzzball -use-loopsum -trace-loop -trace-decisions -trace-iterations \
 -trace-conditions -trace-loopsum -fuzz-start-addr 0x8048553 -fuzz-end-addr 0x5006f63a \
 -solver smtlib -solver-path ../../../lib/z3/build/z3 \
 -linux-syscalls -skip-call-ret-symbol 0x8048598=n -trace-stopping \
 input-dependent -- ./input-dependent 0
 # -fuzz-start-addr          the first instruction of main()
-# -fuzz-end-addr            the 2nd instruction after returning from main(), we 
-#                           identify this instruction by tracing instruction in 
+# -fuzz-end-addr            the 2nd instruction after returning from main(), we
+#                           identify this instruction by tracing instruction in
 #                           FuzzBALL (-trace-insns)
 # -skip-call-ret-symbol     The eip of an atoi that transform string format input
-#                           to an integer.        
+#                           to an integer.
 ```
 ### Decision Tree Visualization
-FuzzBALL writes the decision tree in dot format when it stops. 
+FuzzBALL writes the decision tree in dot format when it stops.
 The dot file is stored at /tmp/bdt_graph by default.
 You can convert the file to pdf by running the command bellow.
 ```bash
 dot -Tpdf /tmp/bdt_graph -o /tmp/bdt.pdf
 ```
+
+## Known Bugs
+* -check-for-ret-addr-overwrite doesn't work in example/loopsum/ret-addr-overwrite
 
 ## Reference
 <a name="footnote1">[1]</a>

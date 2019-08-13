@@ -15,22 +15,29 @@ Another basic example to test whether context-aware summarization works.
 ### ret-addr-overwrite
 A running example that can demonstrate the benefit using loopsum in bug finding.
 
-To simplify this test, compile this example with ``-fno-stack-protector``
+![](linux_stackframe.png)
+
+In this example, main() return address is overwritten, and FuzzBALL stops at symbolic execution.
+
+With loopsum turned on, more total iterations (85 vs. 45) but earlier bug detecting (7 vs. 35).
+
+To simplify this test, disable stack protector and pie by compiling this example with ``-fno-stack-protector`` and ``-no-pie``
 ```bash
 gcc -m32 -no-pie -fno-stack-protector ret-addr-overwrite.c -g -o ret-addr-overwrite
-# Disable pie for some newer version gcc/ld
-# To simplify bug reproducing, also disable stack protector
 ```
 
 Pure symbolic execution
 ```bash
 ../../exec_utils/fuzzball -use-loopsum -trace-loopsum \
--fuzz-start-addr 0x0804840d -symbolic-short 0x0804a01c=n \
+-fuzz-start-addr 0x0804840d -symbolic-word 0x0804a01c=n \
+-check-condition-at '0x08048456:mem[R_ESP:reg32_t]:reg32_t<>0x5003fe81:reg32_t' \
+-finish-immediately -finish-on-nonfalse-cond \
+-extra-condition 'n:reg32_t<=40:reg32_t' \
 -trace-conditions -trace-iterations -solver smtlib \
 -solver-path /path/to/z3/build/z3 -linux-syscalls -trace-stopping \
 ret-addr-overwrite -- ./ret-addr-overwrite 0
-# End with Strange term exception; not 100% sure whether that's the right result
 ```
+To check return address overwrite, turn on both ``-check-for-ret-addr-overwrite`` and ``-finish-on-ret-addr-overwrite`` (currently doesn't work for this example.)
 
 "2-path" experiment
 ```bash
