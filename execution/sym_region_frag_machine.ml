@@ -397,6 +397,9 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, _)
 	  -> ExprOffset(e)
+      | V.BinOp(V.DIVIDE, _, _)
+      | V.BinOp(V.SDIVIDE, _, _)
+	  -> ExprOffset(e)
       | V.BinOp(V.BITOR, 
 		V.BinOp(V.BITAND, V.Cast(V.CAST_SIGNED, _, _), x),
 		V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)),
