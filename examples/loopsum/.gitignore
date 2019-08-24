@@ -5,4 +5,6 @@ jl
 multi-occurence
 ret-addr-overwrite
 ret-addr-overwrite-2ls
+lvar-overwrite
+lvar-overwrite-2ls
 sign
