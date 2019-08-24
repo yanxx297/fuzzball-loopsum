@@ -15,7 +15,7 @@ void func(int x){
 		x = x - 1; 	/* IV1 */
 	}
 	
-	if (c <= 37){		/* overwrite main()'s return addr when input >= 34*/
+	if (c <= 33){		/* overwrite main()'s return addr when input >= 34*/
 		str[c] = 0;
 	}
 }
