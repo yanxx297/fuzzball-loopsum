@@ -195,10 +195,14 @@ class simple_graph (h: int64) = object(self)
         Printf.eprintf "Add %Lx to graph %Lx\n" id head
 
   method add_edge tail head =
+    let add_nodup tbl a b =
+      let l = Hashtbl.find_all tbl a in
+        if not (List.mem b l) then Hashtbl.add tbl a b
+    in
     if not (Hashtbl.mem nodes tail) then 
       self#add_node tail;
-    Hashtbl.add successor tail head;
-    Hashtbl.add predecessor head tail;
+    add_nodup successor tail head;
+    add_nodup predecessor head tail;
     if not (Hashtbl.mem nodes head) then 
       (self#add_node head;
        self#dom_comp head)
@@ -214,8 +218,8 @@ class simple_graph (h: int64) = object(self)
     let dom = self#eip_to_set x in
     let res = DS.mem d dom in
       if !opt_trace_loop_detailed then
-        if res = true then Printf.eprintf "0x%08Lx dominate 0x%08Lx\n" x d
-        else Printf.eprintf "0x%08Lx does not dominate 0x%08Lx\n" x d;
+        if res = true then Printf.eprintf "0x%08Lx dominate 0x%08Lx\n" d x
+        else Printf.eprintf "0x%08Lx does not dominate 0x%08Lx\n" d x;
       res
 
   method reset =
@@ -672,23 +676,24 @@ class loop_record tail head g= object(self)
                        (min_ec_cond geip gt)))
         | _ -> failwith ""
 
-  method private compute_loop_body tail head g = 
+  method compute_loop_body tail head (g:simple_graph) = 
     let rec inc_loopbody eip = 
-      if not (eip = head || Hashtbl.mem loop_body eip) then 
+      if not (eip = head) then 
         (self#add_insn eip;
-         let pred_list = g#pred eip in
+         let pred = g#pred eip in
            if !opt_trace_loop_detailed then
-             (Printf.eprintf "compute_loop_body: { ";
-              let print_pred addr = Printf.eprintf "%Lx, " addr in
-                List.iter print_pred pred_list;
-                Printf.eprintf "} -> %Lx\n" eip);
-           List.iter inc_loopbody pred_list)
+             (Printf.eprintf "pred %Lx { " eip;
+              List.iter (fun addr ->
+                           Printf.eprintf "%Lx, " addr) pred;
+              Printf.eprintf "}\n");
+           List.iter inc_loopbody pred)
     in
       inc_loopbody tail;
       self#add_insn tail;
       self#add_insn head;
       if !opt_trace_loop then
-        (Printf.eprintf "Compute loopbody (%Lx -> %Lx) size: %d\n" tail head (Hashtbl.length loop_body);
+        (Printf.eprintf "Compute loopbody (%Lx -> %Lx) size: %d\n" 
+           tail head (Hashtbl.length loop_body);
          let msg = ref "" in
            Hashtbl.iter (fun eip _ ->
                            msg := !msg ^ (Printf.sprintf "%Lx " eip)
@@ -975,7 +980,9 @@ class dynamic_cfg (eip : int64) = object(self)
       if Hashtbl.mem looplist dest then 
         (if !opt_trace_loop then 
            msg := !msg ^ (Printf.sprintf "Find loop in looplist, head = 0x%08Lx\n" dest);
-         (true, true, Some (Hashtbl.find looplist dest), !msg))
+         let l = Hashtbl.find looplist dest in
+           l#compute_loop_body src dest g;
+           (true, true, Some l, !msg))
       else if current_head = dest then 
         (if !opt_trace_loop then
            msg := !msg ^ (Printf.sprintf "Stay in the same loop, head = %Lx\n" dest);
@@ -1050,7 +1057,8 @@ class dynamic_cfg (eip : int64) = object(self)
                             current_node eip msg;
                         if !opt_trace_loop_detailed then 
                           Printf.eprintf "Add head = %Lx to looplist\n" eip;
-                          Printf.eprintf "At iter %d, there are %d loop(s) in list\n" lp#get_iter (Hashtbl.length looplist);
+                          Printf.eprintf "At iter %d, there are %d loop(s) in list\n" 
+                            lp#get_iter (Hashtbl.length looplist);
                         EnterLoop)
                    | None -> ErrLoop)	
             | (_, in_loop, _, msg) ->

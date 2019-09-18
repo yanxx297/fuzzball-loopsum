@@ -66,6 +66,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
     (int -> bool) ->
     int -> (int -> int) -> (int -> int) -> (int -> unit) -> 
     (int64 * Vine.exp) list * int64  
+  method compute_loop_body: int64 -> int64 -> simple_graph -> unit
   method finish_loop : unit
 end
 
