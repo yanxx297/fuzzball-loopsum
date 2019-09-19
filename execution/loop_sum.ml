@@ -91,15 +91,6 @@ let split_cond e b if_expr_temp =
   in
     split e (not b)
 
-let simplify_cond simplify exp = 
-  let rec is_flag e = 
-    (match e with
-       | V.BinOp(op, exp1, exp2) -> 
-           (match op with                
-              | (V.EQ | V.NEQ | V.SLT | V.SLE | V.LT | V.LE) -> true
-              | _ -> ((is_flag exp1)&&(is_flag exp2)))
-       | _ -> (false)) in
-    if is_flag exp then simplify exp else exp
 
 let print_set set = 
   Printf.eprintf "Set = {";
@@ -312,7 +303,22 @@ class loop_record tail head g= object(self)
   (* At the end of each loop iteration, check each iv and clean ivt if *)
   (* - any iv is changed by a different dV from previous, OR*)
   (* - any iv is not changed in current iter *)      
-  method update_ivt s_func check =
+  method update_ivt simplify check =
+    let simplify_cond exp = 
+      (let rec is_cond e = 
+         (match e with
+            | V.BinOp(op, exp1, exp2) -> 
+                (match op with                
+                   | (V.EQ | V.NEQ | V.SLT | V.SLE | V.LT | V.LE) -> true
+                   | _ -> ((is_cond exp1)&&(is_cond exp2)))
+            | _ -> (false)) 
+       in
+         if is_cond exp then simplify V.REG_1 exp else exp)
+    in
+    let simplify_typecheck exp =
+      let typ = Vine_typecheck.infer_type_fast exp in
+        simplify typ exp
+    in
     let rec check_ivt l =
       match l with
         | iv::l' ->
@@ -320,20 +326,19 @@ class loop_record tail head g= object(self)
                if iter = 2 then (offset, v0, v', v', dv_opt)::(check_ivt l')
                else if check (V.BinOp(V.EQ, v', v)) then check_ivt l'
                else
-                 let dv' = V.BinOp(V.MINUS, v', v) in
+                 let dv' = simplify_typecheck (V.BinOp(V.MINUS, v', v)) in
                    match dv_opt with
                      | None -> 
-                         (offset, V.BinOp(V.MINUS, v0, dv'), v', v', Some dv')::(check_ivt l')
+                         (offset, simplify_typecheck (V.BinOp(V.MINUS, v0, dv')), v', v', Some dv')::(check_ivt l')
                      | Some dv -> 
                          (*NOTE: should check validity instead of satisfiability?*)
                          (let cond = V.BinOp(V.EQ, dv, dv') in
-                          let cond' = simplify_cond s_func cond in
-                            (match cond' with
+                            (match (simplify_cond cond) with
                                | V.Constant(V.Int(V.REG_1, 1L)) -> 
                                    (offset, v0, v', v', Some dv')::(check_ivt l')
                                | V.Constant(V.Int(V.REG_1, 0L)) -> check_ivt l'
                                | _ ->
-                                   (if check cond' then
+                                   (if check cond then
                                       (Hashtbl.replace iv_cond_t cond ();
                                        (offset, v0, v', v', Some dv')::(check_ivt l'))
                                     else check_ivt l'))))
@@ -353,23 +358,24 @@ class loop_record tail head g= object(self)
            | false  -> (Printf.eprintf "0x%08Lx is not in the loop <0x%08Lx>\n" eip id));
       res
 
-  method private replace_iv (offset, v0, v, v', dv) = 
-    let rec loop l = (
-      match l with
-        | iv::l' -> (
-            let (offset', _, _, _, _) = iv in
-              if offset' = offset then [(offset, v0, v, v', dv)] @ l' 
-              else [iv] @ (loop l'))
-        | [] -> []
-    ) in
-      ivt <- loop ivt
 
   (* FIXME: consider the situation that a variable is updated mutiple times in the same loop iteration*)
   method add_iv (offset: int64) (exp: V.exp) =
+    let replace_iv (offset, v0, v, v', dv) = 
+      (let rec loop l =
+         (match l with
+            | iv::l' -> (
+                let (offset', _, _, _, _) = iv in
+                  if offset' = offset then [(offset, v0, v, v', dv)] @ l' 
+                  else [iv] @ (loop l'))
+            | [] -> [])
+       in
+         ivt <- loop ivt)
+    in
     match (self#ivt_search offset) with
       | Some iv -> 
           let (offset, v0, v, v', dv) = iv in
-            if not (v' = exp) then self#replace_iv (offset, v0, v, exp, dv)
+            if not (v' = exp) then replace_iv (offset, v0, v, exp, dv)
       | None -> 
           if iter = 2 then 
             (Printf.eprintf "Add new iv with offset = %Lx\n" offset;
@@ -920,11 +926,11 @@ class dynamic_cfg (eip : int64) = object(self)
         | None -> 0
         | Some l -> l#get_iter
 
-  method update_ivt s_func check = 
+  method update_ivt simplify check = 
     let loop = self#get_current_loop in
       match loop with
         | None -> ()
-        | Some l -> l#update_ivt s_func check
+        | Some l -> l#update_ivt simplify check
 
   method add_iv addr exp =
     let loop = self#get_current_loop in

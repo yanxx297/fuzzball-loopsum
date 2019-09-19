@@ -1141,14 +1141,13 @@ struct
                  | None  -> (e))
         | _  -> 
             (let e' = D.from_symbolic e in
-             let res = (match typ with
-                          | V.REG_1 -> form_man#simplify1 e'
-                          | V.REG_8 -> form_man#simplify8 e'
-                          | V.REG_16 -> form_man#simplify16 e'
-                          | V.REG_32 -> form_man#simplify32 e'
-                          | V.REG_64 -> form_man#simplify64 e'
-                          | _ -> failwith "simplify_exp: illegal typ") in
-               D.to_symbolic_1 res)
+               match typ with
+                 | V.REG_1 -> D.to_symbolic_1 (form_man#simplify1 e')
+                 | V.REG_8 -> D.to_symbolic_8 (form_man#simplify8 e')
+                 | V.REG_16 -> D.to_symbolic_16 (form_man#simplify16 e')
+                 | V.REG_32 -> D.to_symbolic_32 (form_man#simplify32 e')
+                 | V.REG_64 -> D.to_symbolic_64 (form_man#simplify64 e')
+                 | _ -> failwith "simplify_exp: illegal typ")
 
     (* A wrapper around spfm#eval_cjmp for loop summarization*)
     (* Analyze the condition to get right and left side*)
@@ -2093,7 +2092,7 @@ struct
              let (is_sat, _) = self#query_with_path_cond (self#simplify_exp typ e) true in
                is_sat
            in
-             spfm#update_ivt (fun exp -> D.to_symbolic_1(form_man#simplify1 (D.from_symbolic exp))) check);
+             spfm#update_ivt self#simplify_exp check);
       if !opt_check_for_ret_addr_overwrite then
 	self#update_ret_addrs last_insn last_eip eip;
 

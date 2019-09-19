@@ -547,7 +547,7 @@ class virtual fragment_machine = object
   method virtual in_loop : int64 -> bool
   method virtual get_loop_head : int64
   method virtual add_iv : int64 -> Vine.exp -> unit
-  method virtual update_ivt : (Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> unit
+  method virtual update_ivt : (Vine.typ -> Vine.exp -> Vine.exp) -> (Vine.exp -> bool) -> unit
   method virtual print_dt : unit
   method virtual add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
       (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
@@ -716,10 +716,10 @@ struct
         | None -> ()
         | Some g -> g#add_iv offset exp
 
-    method update_ivt s_func check = 
+    method update_ivt simplify check = 
       match current_dcfg with
         | None -> ()
-        | Some g -> g#update_ivt s_func check
+        | Some g -> g#update_ivt simplify check
 
     method is_iv_cond cond = 
       match current_dcfg with
