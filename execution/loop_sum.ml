@@ -285,8 +285,22 @@ class loop_record tail head g= object(self)
   (* Inductive variable table (IVT) = (offset, V_0, V, V', dV)*)
   (* offset:= addr offset from stack pointer *)
   (* NOTE: add ty to this table instead of intering it on demand?*)
-  val mutable ivt = []	  
+  val mutable ivt = []
   val iv_cond_t = Hashtbl.create 10
+
+  (* Return true if ivt and ivt' are identical *)
+  (* For the IVTs of the same loopsum, there should be exactly the same number*)
+  (* of IVs, added in exactly the same order*)
+  method private ivt_cmp ivt ivt' =
+    if not (List.length ivt = List.length ivt') then false
+    else
+      let res = ref true in
+        List.iteri (fun i iv ->
+                      let (_, v, _, _, dv) = iv  
+                      and (_, v', _, _, dv') = List.nth ivt' i in
+                        if not (v = v' && dv = dv') then res := false
+        ) ivt;
+        !res
 
   method private ivt_search off = 
     let res = ref None in
@@ -386,7 +400,18 @@ class loop_record tail head g= object(self)
   (*D: the actual distance of current iteration, updated at each new occurence of the same loop*)
   (*EC: the expected execution count*)
   (*b: denotes which side of the cjmp branch is in the loop*)
-  val mutable gt = [] 
+  val mutable gt = []
+
+  method private gt_cmp gt gt' =
+    if not (List.length gt = List.length gt') then false
+    else
+      let res = ref true in
+        List.iteri (fun i g ->
+                      let (eip, _, _, _, _, _, _, _) = g 
+                      and (eip', _, _, _, _, _, _, _) = List.nth gt' i in
+                        if not (eip = eip') then res := false
+        ) gt;
+        !res
 
   method private gt_search gt eip = 
     let rec check_gt l eip =
@@ -625,6 +650,22 @@ class loop_record tail head g= object(self)
 
   method set_lss s = lss <- s
 
+  (* Return true if new loopsum n already exist in lss *)
+  method private check_dup_lss n = 
+    let rec check_dup l n = 
+      (match l with
+         | h::rest ->
+             (let (ivt, gt, geip) = h
+              and (ivt', gt', geip') = n in
+                if (geip = geip' 
+                    && (self#ivt_cmp ivt ivt') 
+                    && (self#gt_cmp gt gt')) 
+                then true
+                else check_dup rest n)
+         | [] -> false)
+    in
+      check_dup lss n
+
   (* Save current (ivt, gt, geip) to a new lss if valid*)
   (* Call this function when exiting a loop *)
   (* TODO: should also check invalid GT ?*)
@@ -637,8 +678,13 @@ class loop_record tail head g= object(self)
                      let (_, _, _, _, dv) = iv in
                        if dv = None then all_valid := false 
         ) ivt;
-        if !all_valid then lss <- lss @ [(ivt, gt, geip)]
-        else Printf.eprintf "No lss saved since some IV invalid"
+        if not !all_valid then
+          Printf.eprintf "No lss saved since some IV invalid\n"
+        else if (self#check_dup_lss (ivt, gt, geip)) then 
+          Printf.eprintf "lss already exist, ignore\n"
+        else
+          lss <- lss @ [(ivt, gt, geip)];
+        Printf.eprintf "lss length %d\n" (List.length lss)
 
   method private compute_precond loopsum check eval_cond simplify if_expr_temp =
     let (_, gt, geip) = loopsum in
@@ -1074,7 +1120,8 @@ class dynamic_cfg (eip : int64) = object(self)
                        (if !opt_trace_loop && (l#get_iter > 0) then 
                           Printf.eprintf "%sEnd loop %Lx on %d-th iter\n" 
                             msg (l#get_head) (l#get_iter);
-                        if (l#get_status != Some true) && (self#get_iter > 2) && (l#get_lss = []) then
+                        if (l#get_status != Some true) 
+                        && (self#get_iter > 2) then
                           (l#save_lss current_node;
                            l#finish_loop);
                         l#reset;
