@@ -1160,8 +1160,8 @@ struct
       let b = self#eval_cjmp_targ targ1 targ2 v e in 
         (match spfm#is_guard targ1 targ2 with
            (*targ : real targ choosen by cjmp_choose*)
-           (*in_loop : the jump targ that is in loop*)
-           | (true, in_loop) -> 
+           (*in_loop_targ : the jump targ that is in loop*)
+           | (true, in_loop_targ) -> 
                (match (Loop_sum.split_cond e b if_expr_temp) with
                   | (Some lhs, Some rhs, op) ->
                       (let ty_l = Vine_typecheck.infer_type_fast lhs in
@@ -1169,14 +1169,16 @@ struct
                        let lhs' = (self#simplify_exp ty_l lhs) in
                        let rhs' = (self#simplify_exp ty_r rhs) in
                        let targ = (if b then targ1 else targ2) in
-                         if (in_loop = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) 
+                         if (in_loop_targ = -1L || e = V.Constant(V.Int(V.REG_1, 1L)) 
                                || e = V.Constant(V.Int(V.REG_1, 0L))) then ()
                          else if not (ty_l = ty_r) then 
                            failwith "Illegal cjmp: inconsistent ty_l and ty_r"
-                         else if targ != in_loop && !opt_trace_loopsum then
-                              Printf.eprintf "Failed to create gt entry: targ(0x%Lx) not in loop(%Lx)\n" targ in_loop
+                         else if targ != in_loop_targ && !opt_trace_loopsum then
+                           Printf.eprintf 
+                             "Failed to create gt entry: targ(0x%Lx) not in loop(%Lx)\n" 
+                             targ in_loop_targ
                          else
-                           (let eeip = if in_loop = targ1 then targ2 else targ1 in
+                           (let eeip = if in_loop_targ = targ1 then targ2 else targ1 in
                             let check e =
                               let ty = Vine_typecheck.infer_type_fast e in
                               let (is_sat, _) = self#query_with_path_cond (self#simplify_exp ty e) true in
@@ -1184,10 +1186,13 @@ struct
                             in
                               self#add_g (self#get_eip, op, ty_l, exp, lhs', rhs', b, eeip) check self#simplify_exp))
                   | _ -> ())
-           | _ -> ());
-        (match b with
-           | true -> self#add_bd (self#get_eip) e targ1
-           | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2);
+           | _ -> 
+               (let eip = self#get_eip in
+                  if not (self#in_loop eip) then ()
+                  else
+                    (match b with
+                       | true -> self#add_bd (self#get_eip) e targ1
+                       | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2)));
         b
 
     method private register_num reg =

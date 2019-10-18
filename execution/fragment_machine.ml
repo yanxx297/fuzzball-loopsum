@@ -665,8 +665,13 @@ struct
     val mutable stackpointer = -1L
     val mutable snap_stackpointer = -1L
 
+    (* Cache all code executed in current path *)
+    val mutable path_cache = []
+    val mutable snap_path_cache = []
+
     method get_stack_base_addr = stackpointer
 
+    (* A cond jump is a guard if one target is in loop and another is not *)
     (**res = (is_guard?, in_loop_targ)*)
     method is_guard t_eip f_eip = 
       let res = match current_dcfg with
@@ -731,10 +736,98 @@ struct
         | None -> ()
         | Some dcfg -> dcfg#add_g g check simplify
 
-    method add_bd eip exp d = (
+    (* Given a expression, return a list of all variables it contains *)
+    method private get_vars exp =
+      let rec loop exp =
+        (match exp with
+           | V.Lval(lval) -> 
+               (match lval with
+                  | V.Temp(_) -> [lval]
+                  | _ -> [])
+           | V.BinOp(_, exp1, exp2) | V.FBinOp(_, _, exp1, exp2) -> 
+               ((loop exp1) @ (loop exp2))
+           | V.UnOp(_, e) | V.FUnOp(_, _, e) | V.Cast(_, _, e) 
+           | V.FCast(_, _, _, e) -> 
+               (loop e)
+           | V.Ite(exp1, exp2, exp3) -> ((loop exp1) @ (loop exp2) @ (loop exp3))
+           | _ -> [])
+      in
+        Printf.eprintf "get vars from (%s)\n" (V.exp_to_string exp);
+        loop exp
+
+    method private print_vars vars =
+      let vars_str = ref "[" in
+        List.iter (fun var ->
+                     vars_str := !vars_str ^ (V.exp_to_string (V.Lval(var)))
+        ) vars;
+        Printf.eprintf "%s]\n" !vars_str;        
+        
+    method private prog_slicing vars prog =
+      let rec check_vars lval vars =
+        (match vars with
+           | var::rest ->
+               (if lval = var then 
+                  (Printf.eprintf "Remove %s = %s\n" (V.exp_to_string (V.Lval(lval))) (V.exp_to_string (V.Lval(var))); (true, rest))
+                else 
+                  (Printf.eprintf "No Remove %s != %s\n" (V.exp_to_string (V.Lval(lval))) (V.exp_to_string (V.Lval(var)));
+                    let (res, tail) = check_vars lval rest in (res, var::tail)))
+           | [] -> (false, vars)
+        )
+      in
+      let stmt_scan vars stmt =
+        (match stmt with
+           | V.Move(lval, exp) ->
+               (let (is_decl, vars) = check_vars lval vars in
+                  if is_decl then (true, (self#get_vars exp) @ vars)
+                  else (false, vars)
+               )
+           | _ -> (false, vars))
+      in
+      let rec loop_insn vars l =
+        self#print_vars vars;
+        (match l with
+           | stmt::rest ->
+               (Printf.eprintf "%s\n" (V.stmt_to_string stmt);
+                let (in_slice, vars) = stmt_scan vars stmt in
+                let (tail, vars) = loop_insn vars rest in
+                  if in_slice then (stmt::tail, vars)
+                  else (tail, vars))
+           | [] -> ([], vars))
+      in
+      let rec loop_prog vars prog = 
+        (match prog with
+           | l::rest ->
+               (let (curr, vars) = loop_insn vars (List.rev l) in
+                let (tail, vars') = loop_prog vars rest in
+                  (curr @ tail, vars')
+               )
+           | [] -> ([], vars))
+      in
+        Printf.eprintf "Program slicing start.\n";
+        loop_prog vars prog
+    
+    method add_bd eip exp d =
+      let rec get_cjmp_cond stmt =
+        (match stmt with
+           |s::rest ->
+               (match s with
+                  |V.CJmp(cond, _, _) -> Some cond
+                  | _ -> get_cjmp_cond rest)
+           | [] -> failwith "In loop branch should be CJmp\n")
+      in
       match current_dcfg with
         | None -> ()
-        | Some g -> (g#add_bd eip exp d))
+        | Some g ->
+            ((match (get_cjmp_cond (List.nth path_cache 0)) with
+                | Some e -> 
+                    (let (slice, _) = self#prog_slicing (self#get_vars e) path_cache
+                     in
+                       Printf.eprintf "Slicing result:\n";
+                       List.iter (fun stmt ->
+                                    Printf.eprintf "%s\n" (V.stmt_to_string stmt)
+                       ) slice)
+                | None -> ());
+             g#add_bd eip exp d)
 
     (* A stack of useLoopsum? nodes on current path*)
     (* (node_ident, loop_record)*)
@@ -2114,6 +2207,7 @@ struct
       Hashtbl.iter (fun head dcfg -> 
                       dcfg#make_snap;
       ) dcfgs;
+      snap_path_cache <- path_cache;
       List.iter snap_handler !special_handler_list_ref
 
     val mutable fuzz_finish_reasons = []
@@ -2178,6 +2272,7 @@ struct
         loop_enter_nodes <- snap_loop_enter_nodes;
         stackpointer <- snap_stackpointer;
         Hashtbl.clear event_details;
+        path_cache <- snap_path_cache;
         event_history <- [];
         List.iter reset !special_handler_list_ref
 
@@ -2970,6 +3065,8 @@ struct
 	loop sl
 
     method run () =
+      if self#started_symbolic then
+        path_cache <- insns::path_cache;
       self#run_sl is_true insns
 
     method run_to_jump () =
