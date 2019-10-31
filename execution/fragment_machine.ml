@@ -736,6 +736,45 @@ struct
         | None -> ()
         | Some dcfg -> dcfg#add_g g check simplify
 
+    val mutable slice_var_count = 0
+    val mutable slice_var_list = Hashtbl.create 100
+
+    method private replace_var v = 
+      let (id, s, typ) = v in
+        match (Hashtbl.find_opt slice_var_list id) with
+          | Some var -> var
+          | None -> 
+              (let v' = V.newvar (s^Printf.sprintf "_%d" slice_var_count) typ
+               in        
+                 slice_var_count <- slice_var_count + 1;
+                 Hashtbl.add slice_var_list id v';
+                 v')
+
+    method private replace_temps_exp exp =
+      let rec loop e = 
+        match e with
+          | V.BinOp(op, e1, e2) -> V.BinOp(op, loop e1, loop e2)
+          | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, loop e1, loop e2)
+          | V.UnOp(op, e1) -> V.UnOp(op, loop e1)
+          | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, loop e1)
+          | V.Lval(V.Temp(var)) -> V.Lval(V.Temp(self#replace_var var)) 
+          | V.Lval(V.Mem(var, e1, typ)) -> e
+          | V.Cast(ctyp, typ, e1) -> V.Cast(ctyp, typ, loop e1)
+          | V.FCast(ctyp, rm, typ, e1) -> V.FCast(ctyp, rm, typ, loop e1)
+          | V.Ite(cond, e1, e2) -> V.Ite(loop cond, loop e1, loop e2)
+          | V.Let(_, _, _) -> failwith "Unexpected exp type on left side of the formula"
+          | V.Constant(_)| V.Name(_)| V.Unknown(_) -> e
+      in
+        loop exp 
+
+    method private replace_temps stmt =
+      let rec loop stmt =
+        match stmt with
+          | V.Move(V.Temp(var), e) -> V.Move(V.Temp(self#replace_var var), (self#replace_temps_exp e))
+          | V.Move(V.Mem(_, _, _) as m, e) -> V.Move(m, (self#replace_temps_exp e))
+          | _ -> stmt
+      in loop stmt
+
     (* Given a expression, return a list of all variables it contains *)
     method private get_vars exp =
       let rec loop exp =
@@ -760,7 +799,7 @@ struct
         List.iter (fun var ->
                      vars_str := !vars_str ^ (V.exp_to_string (V.Lval(var)))
         ) vars;
-        Printf.eprintf "%s]\n" !vars_str;        
+        Printf.eprintf "%s]\n" !vars_str        
         
     method private prog_slicing vars prog =
       let rec check_vars lval vars =
@@ -804,7 +843,14 @@ struct
            | [] -> ([], vars))
       in
         Printf.eprintf "Program slicing start.\n";
-        loop_prog vars prog
+        let (l, vars) = loop_prog vars prog in
+        let l = 
+          (List.map(fun stmt ->
+                      self#replace_temps stmt
+          )l)
+        in
+          (l, vars)
+
     
     method add_bd eip exp d =
       let rec get_cjmp_cond stmt =
