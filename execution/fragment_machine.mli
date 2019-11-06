@@ -303,7 +303,6 @@ class virtual fragment_machine : object
   method virtual set_text_range : int64 -> int64 -> unit
   method virtual get_stack_base_addr: int64
   method virtual is_guard : int64 -> int64 -> bool * int64
-  method virtual branch_heur : int64 -> int64 -> int64 option
   method virtual in_loop : int64 -> bool
   method virtual get_loop_head : int64
   method virtual add_iv : int64 -> Vine.exp -> unit
@@ -612,7 +611,6 @@ sig
     method set_text_range : int64 -> int64 -> unit
     method get_stack_base_addr: int64
     method is_guard: int64 -> int64 -> bool * int64
-    method branch_heur : int64 -> int64 -> int64 option
     method in_loop : int64 -> bool
     method get_loop_head : int64
     method add_iv : int64 -> Vine.exp -> unit

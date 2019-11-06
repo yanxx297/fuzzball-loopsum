@@ -543,7 +543,6 @@ class virtual fragment_machine = object
   method virtual set_text_range : int64 -> int64 -> unit
   method virtual get_stack_base_addr: int64
   method virtual is_guard : int64 -> int64 -> bool * int64
-  method virtual branch_heur : int64 -> int64 -> int64 option
   method virtual in_loop : int64 -> bool
   method virtual get_loop_head : int64
   method virtual add_iv : int64 -> Vine.exp -> unit
@@ -683,23 +682,6 @@ struct
                | _ -> (false, -1L))
       in
         res
-
-    method branch_heur t_eip f_eip = (
-      let eip = self#get_eip in
-      let res = match current_dcfg with
-        | None -> (None)
-        | Some dcfg -> (
-            match (dcfg#in_loop t_eip, dcfg#in_loop f_eip) with
-              | (true, true) 
-              | (true, false)
-              | (false, true) -> (
-                  let d = dcfg#check_bt eip in
-                    (match d with
-                       | Some (_, res) -> (Some res)
-                       | _ -> None))
-              | _ -> (None))
-      in
-        res)
 
     method in_loop eip= (
       match current_dcfg with
