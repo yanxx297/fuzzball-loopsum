@@ -246,11 +246,38 @@ class loop_record tail head g= object(self)
   val id = head
   val loop_body = Hashtbl.create 100
 
-  (* Branch table: (branch_eip(int64), cond(exp), current_decision(int64))
-   collect branch conditions in loop and use them to 
-   compute pre conditions.*)
-  val mutable bt = Hashtbl.create 10		
-  val mutable snap_bt = Hashtbl.create 10	
+  (* List of in-loop branch conditions and the associated prog slices *)
+  (* This list is shared among all summaries in the same lss*)
+  (* bt := (eip -> (cond, slice))*)
+  val bt = Hashtbl.create 10
+
+  (* List of in-loop branch decisions made in current Path *)
+  (* each bdt is associated with one loopsum *)
+  (* bdt := (eip -> decision(bool))*)
+  val mutable bdt = Hashtbl.create 10
+  val mutable snap_bdt = Hashtbl.create 10
+
+  method private bdt_cmp bdt bdt' = 
+    if not (Hashtbl.length bdt == Hashtbl.length bdt') then false
+    else
+      let res = ref true in
+        Hashtbl.iter (fun (eip:int64) d ->
+                        match (Hashtbl.find_opt bdt' eip) with
+                          | Some d' -> if not d = d' then res := false
+                          | None -> res := false
+        ) bdt;
+        !res
+
+  method add_bd eip b =
+    Hashtbl.replace bdt eip b
+
+  method add_slice (eip:int64) (cond: V.exp) (slice: V.stmt list) = 
+    Hashtbl.replace bt eip (cond, slice)
+
+  method find_slice eip = 
+    match (Hashtbl.find_opt bt eip) with
+      | Some s -> true
+      | None -> false
 
   (* Status about applying loopsum*)
   (* None: haven't tried to apply loopsum *)
@@ -627,23 +654,14 @@ class loop_record tail head g= object(self)
     in
       gt <- loop gt
 
-  (*NOTE: what's the d (target) for?*)
-  method add_bd (eip:int64) (e: V.exp) (d:int64) = (
-    if !opt_trace_loopsum_detailed then
-      Printf.eprintf "add_bd: at 0x%08Lx, cond = %s\n" eip (V.exp_to_string e); 
-    Hashtbl.replace bt eip (e, d))
-
-  method check_bt eip = (
-    try (Some (Hashtbl.find bt eip)) with
-      | Not_found -> None)
-
   method get_head = id
 
   method add_insn (eip:int64) = 
     Hashtbl.replace loop_body eip ()
 
-  (* loopsum set (lss) = (ivt, gt, geip)*)
+  (* loopsum set (lss) = (ivt, gt, bdt, geip)*)
   (* geip := the guard to leave from*)
+  (* bdt := in-loop branch decision *)
   val mutable lss = []
 
   method get_lss = lss
@@ -655,9 +673,10 @@ class loop_record tail head g= object(self)
     let rec check_dup l n = 
       (match l with
          | h::rest ->
-             (let (ivt, gt, geip) = h
-              and (ivt', gt', geip') = n in
+             (let (ivt, gt, bdt, geip) = h
+              and (ivt', gt', bdt', geip') = n in
                 if (geip = geip' 
+                    && (self#bdt_cmp bdt bdt')
                     && (self#ivt_cmp ivt ivt') 
                     && (self#gt_cmp gt gt')) 
                 then true
@@ -680,14 +699,14 @@ class loop_record tail head g= object(self)
         ) ivt;
         if not !all_valid then
           Printf.eprintf "No lss saved since some IV invalid\n"
-        else if (self#check_dup_lss (ivt, gt, geip)) then 
+        else if (self#check_dup_lss (ivt, gt, bdt, geip)) then 
           Printf.eprintf "lss already exist, ignore\n"
         else
-          lss <- lss @ [(ivt, gt, geip)];
+          lss <- lss @ [(ivt, gt, bdt, geip)];
         Printf.eprintf "lss length %d\n" (List.length lss)
 
   method private compute_precond loopsum check eval_cond simplify if_expr_temp =
-    let (_, gt, geip) = loopsum in
+    let (_, gt, _, geip) = loopsum in
     let min_g_opt = self#gt_search gt geip in 
       match min_g_opt with
         | Some min_g ->
@@ -712,19 +731,14 @@ class loop_record tail head g= object(self)
                  Printf.eprintf "min_ec_cond = %s\n" (V.exp_to_string !res);
                  !res
              in
-             (* Compute a conjunction of all conditions in current branch table*)
-             let branch_cond bt =
-               let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
-                 Hashtbl.iter (fun _ (cond, _) ->
-                                 res := V.BinOp(V.BITAND, !res, cond)
-                 ) bt;
-                 Printf.eprintf "branch_cond = %s\n" (V.exp_to_string !res);
-                 !res
+             (* TODO: Check in-loop branch cond using prog slice*)
+             let branch_cond = 
+               (V.Constant(V.Int(V.REG_1, 1L)))
              in
                V.BinOp(V.BITAND, 
                        V.BinOp(V.BITAND, 
                                V.BinOp(V.BITAND, d_cond, dd_cond), 
-                               (branch_cond bt)), 
+                               (branch_cond)), 
                        (min_ec_cond geip gt)))
         | _ -> failwith ""
 
@@ -826,7 +840,7 @@ class loop_record tail head g= object(self)
       let rec get_feasible id l conds = 
         (match l with
            | h::rest ->
-               (let (ivt, gt, geip) = h in
+               (let (ivt, gt, _, geip) = h in
                 let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
                   if check (V.BinOp(V.BITAND, precond, conds)) then
                     feasibles := (V.BinOp(V.BITAND, precond, conds), 
@@ -892,15 +906,18 @@ class loop_record tail head g= object(self)
     loopsum_status <- None;
     ivt <- [];
     gt <- [];
-    Hashtbl.clear bt
 
   method make_snap =
-    snap_bt <- bt;    
+    snap_bdt <- bdt;    
     iter_snap <- iter;
     loopsum_status_snap <- loopsum_status
 
   method reset_snap =
-    bt <- snap_bt;
+    Printf.eprintf "* Branch Decisions[%d]:\n" (Hashtbl.length bdt);
+    Hashtbl.iter (fun eip b ->
+                    Printf.eprintf "0x%Lx\t%B\n" eip b
+    ) bdt;
+    bdt <- snap_bdt;
     iter <- iter_snap;
     loopsum_status <- loopsum_status_snap
 
@@ -996,17 +1013,23 @@ class dynamic_cfg (eip : int64) = object(self)
         | None -> ()
         | Some l  -> l#add_g g check simplify 
 
-  method check_bt eip = (
-    let loop = self#get_current_loop in
-      match loop with
-        | None -> None
-        | Some l  -> l#check_bt eip)
-
-  method add_bd eip exp d = (
+  method add_bd eip b = 
     let loop = self#get_current_loop in
       match loop with
         | None -> ()
-        | Some l  -> l#add_bd eip exp d)
+        | Some l  -> l#add_bd eip b
+
+  method add_slice eip cond slice = 
+    let loop = self#get_current_loop in
+      match loop with
+        | None -> ()
+        | Some l  -> l#add_slice eip cond slice
+
+  method find_slice eip = 
+    let loop = self#get_current_loop in
+      match loop with
+        | None -> false
+        | Some l  -> l#find_slice eip
 
   method private is_parent lp lc = 
     let head = lc#get_head in

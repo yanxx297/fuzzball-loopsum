@@ -37,15 +37,16 @@ class loop_record : int64 -> int64 -> simple_graph -> object
   method get_lss: ((int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list *
                    (int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp option *
                     Vine.exp option * bool * int64)
-                     list * int64) list                                                                  
+                     list * (int64, bool) Hashtbl.t * int64) list                                                                  
   method set_lss: ((int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list *
                    (int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp option *
                     Vine.exp option * bool * int64)
-                     list * int64) list -> unit
+                     list * (int64, bool) Hashtbl.t * int64) list -> unit
   method save_lss : int64 -> unit
   method add_insn : int64 -> unit
-  method add_bd : int64 -> Vine.exp -> int64 -> unit
-  method check_bt : int64 -> (Vine.exp * int64) option
+  method add_bd : int64 -> bool -> unit
+  method add_slice : int64 -> Vine.exp -> Vine.stmt list -> unit
+  method find_slice : int64 -> bool
   method get_status : bool option
   method set_status : bool option -> unit
   method update_loopsum : unit
@@ -102,8 +103,9 @@ class dynamic_cfg : int64 -> object
     (int -> bool) ->
     int -> (int -> int) -> (int -> int) -> (int -> loop_record -> unit) -> 
     (int64 * Vine.exp) list * int64  
-  method add_bd : int64 -> Vine.exp -> int64 -> unit
-  method check_bt : int64 -> (Vine.exp * int64) option
+  method add_bd : int64 -> bool -> unit
+  method add_slice : int64 -> Vine.exp -> Vine.stmt list -> unit
+  method find_slice : int64 -> bool
   method mark_extra_all_seen : (int * loop_record) list -> (int -> unit) ->
     (int -> bool) -> (int -> int) -> (int -> int) -> unit
 end

@@ -1190,9 +1190,7 @@ struct
                (let eip = self#get_eip in
                   if not (self#in_loop eip) then ()
                   else
-                    (match b with
-                       | true -> self#add_bd (self#get_eip) e targ1
-                       | false -> self#add_bd (self#get_eip) (V.UnOp(V.NOT, e)) targ2)));
+                    self#handle_branch (self#get_eip) e b));
         b
 
     method private register_num reg =

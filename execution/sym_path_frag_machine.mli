@@ -288,7 +288,7 @@ sig
     method is_iv_cond : Vine.exp -> bool
     method add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
       (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
-    method add_bd : int64 -> Vine.exp -> int64 -> unit
+    method handle_branch: int64 -> Vine.exp -> bool -> unit
     method check_loopsum : int64 ->
     (Vine.exp -> bool) ->
     (Vine.exp -> unit) ->

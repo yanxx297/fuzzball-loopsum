@@ -550,7 +550,7 @@ class virtual fragment_machine = object
   method virtual print_dt : unit
   method virtual add_g : int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp * Vine.exp * bool * int64 ->
       (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
-  method virtual add_bd : int64 -> Vine.exp -> int64 -> unit
+  method virtual handle_branch : int64 -> Vine.exp -> bool -> unit
   method virtual simplify_exp : Vine.typ -> Vine.exp -> Vine.exp
   method virtual check_loopsum : int64 ->
     (Vine.exp -> bool) ->
@@ -833,29 +833,19 @@ struct
         in
           (l, vars)
 
-    
-    method add_bd eip exp d =
-      let rec get_cjmp_cond stmt =
-        (match stmt with
-           |s::rest ->
-               (match s with
-                  |V.CJmp(cond, _, _) -> Some cond
-                  | _ -> get_cjmp_cond rest)
-           | [] -> failwith "In loop branch should be CJmp\n")
-      in
+    method handle_branch eip cond b =
       match current_dcfg with
         | None -> ()
         | Some g ->
-            ((match (get_cjmp_cond (List.nth path_cache 0)) with
-                | Some e -> 
-                    (let (slice, _) = self#prog_slicing (self#get_vars e) path_cache
-                     in
-                       Printf.eprintf "Slicing result:\n";
-                       List.iter (fun stmt ->
-                                    Printf.eprintf "%s\n" (V.stmt_to_string stmt)
-                       ) slice)
-                | None -> ());
-             g#add_bd eip exp d)
+            (if not (g#find_slice eip) then
+               (let (slice, _) = self#prog_slicing (self#get_vars cond) path_cache
+                in
+                  g#add_slice eip cond slice;
+                  Printf.eprintf "Slicing result:\n";
+                  List.iter (fun stmt ->
+                               Printf.eprintf "%s\n" (V.stmt_to_string stmt)
+                  ) slice);
+             g#add_bd eip b)
 
     (* A stack of useLoopsum? nodes on current path*)
     (* (node_ident, loop_record)*)
