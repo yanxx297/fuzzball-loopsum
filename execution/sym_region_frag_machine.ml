@@ -1190,7 +1190,7 @@ struct
                (let eip = self#get_eip in
                   if not (self#in_loop eip) then ()
                   else
-                    self#handle_branch (self#get_eip) e b));
+                    self#handle_branch (self#get_eip) exp b));
         b
 
     method private register_num reg =

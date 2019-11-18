@@ -840,11 +840,13 @@ struct
             (if not (g#find_slice eip) then
                (let (slice, _) = self#prog_slicing (self#get_vars cond) path_cache
                 in
-                  g#add_slice eip cond slice;
-                  Printf.eprintf "Slicing result:\n";
-                  List.iter (fun stmt ->
-                               Printf.eprintf "%s\n" (V.stmt_to_string stmt)
-                  ) slice);
+                  (if (List.length slice) = 0 then () 
+                   else
+                     (Printf.eprintf "Slicing result:\n";
+                      List.iter (fun stmt ->
+                                   Printf.eprintf "%s\n" (V.stmt_to_string stmt)
+                      ) slice;
+                      g#add_slice eip cond slice)));
              g#add_bd eip b)
 
     (* A stack of useLoopsum? nodes on current path*)
