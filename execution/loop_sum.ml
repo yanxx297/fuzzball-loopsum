@@ -641,6 +641,12 @@ class loop_record tail head g= object(self)
                   Printf.eprintf "[%d]\t0x%Lx\t%s\t0x%Lx\n" i eip (V.exp_to_string d0_e) eeip
     ) gt
 
+  method private print_bdt = 
+    Printf.eprintf "* Branch Decisions[%d]:\n" (Hashtbl.length bdt);
+    Hashtbl.iter (fun eip b ->
+                    Printf.eprintf "0x%Lx\t%B\n" eip b
+    ) bdt
+
   method get_gt = gt
 
   method private replace_g (eip, op, ty, d0_e, d, dd, b, eeip) = 
@@ -705,8 +711,8 @@ class loop_record tail head g= object(self)
           lss <- lss @ [(ivt, gt, bdt, geip)];
         Printf.eprintf "lss length %d\n" (List.length lss)
 
-  method private compute_precond loopsum check eval_cond simplify if_expr_temp =
-    let (_, gt, _, geip) = loopsum in
+  method private compute_precond loopsum check eval_cond simplify if_expr_temp (run_slice: V.stmt list -> unit) =
+    let (_, gt, bdt, geip) = loopsum in
     let min_g_opt = self#gt_search gt geip in 
       match min_g_opt with
         | Some min_g ->
@@ -731,14 +737,23 @@ class loop_record tail head g= object(self)
                  Printf.eprintf "min_ec_cond = %s\n" (V.exp_to_string !res);
                  !res
              in
-             (* TODO: Check in-loop branch cond using prog slice*)
-             let branch_cond = 
-               (V.Constant(V.Int(V.REG_1, 1L)))
+             let branch_cond bdt =                
+               (let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
+                  Hashtbl.iter (fun eip d ->
+                                  match Hashtbl.find_opt bt eip with
+                                    | Some (cond, slice) -> 
+                                        (run_slice slice;
+                                         res := V.BinOp(V.BITAND, !res, cond)) 
+                                    | None -> ()
+                  ) bdt;
+                  !res)
              in
+               (* Run the prog slice of each in-loop branch and eval*)
+               Printf.eprintf "branch_cond: %s\n" (V.exp_to_string (branch_cond bdt));
                V.BinOp(V.BITAND, 
                        V.BinOp(V.BITAND, 
                                V.BinOp(V.BITAND, d_cond, dd_cond), 
-                               (branch_cond)), 
+                               (branch_cond bdt)), 
                        (min_ec_cond geip gt)))
         | _ -> failwith ""
 
@@ -772,7 +787,7 @@ class loop_record tail head g= object(self)
   (*TODO: loopsum preconds should be add to path cond*)
   method check_loopsum eip check (add_pc: V.exp -> unit) simplify load_iv eval_cond if_expr_temp
             try_ext (random_bit:bool) (is_all_seen: int -> bool) (cur_ident: int) 
-            get_t_child get_f_child (add_node: int -> unit) = 
+            get_t_child get_f_child (add_node: int -> unit) run_slice = 
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
@@ -781,7 +796,7 @@ class loop_record tail head g= object(self)
       match l with
         | h::rest -> 
             (if cur = -1 || not (is_all_seen (get_t_child cur)) then
-               let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
+               let precond = self#compute_precond h check eval_cond simplify if_expr_temp run_slice in
                  V.BinOp(V.BITOR, precond, (get_precond rest (get_f_child cur)))
              else 
                get_precond rest (get_f_child cur)
@@ -841,7 +856,7 @@ class loop_record tail head g= object(self)
         (match l with
            | h::rest ->
                (let (ivt, gt, _, geip) = h in
-                let precond = self#compute_precond h check eval_cond simplify if_expr_temp in
+                let precond = self#compute_precond h check eval_cond simplify if_expr_temp run_slice in
                   if check (V.BinOp(V.BITAND, precond, conds)) then
                     feasibles := (V.BinOp(V.BITAND, precond, conds), 
                                   id, ivt, gt, geip)::!feasibles;
@@ -898,7 +913,8 @@ class loop_record tail head g= object(self)
   method finish_loop = 
     if !opt_trace_loopsum then
       (self#print_gt;
-       self#print_ivt)
+       self#print_ivt;
+       self#print_bdt)
        
 
   method reset =
@@ -913,10 +929,6 @@ class loop_record tail head g= object(self)
     loopsum_status_snap <- loopsum_status
 
   method reset_snap =
-    Printf.eprintf "* Branch Decisions[%d]:\n" (Hashtbl.length bdt);
-    Hashtbl.iter (fun eip b ->
-                    Printf.eprintf "0x%Lx\t%B\n" eip b
-    ) bdt;
     bdt <- snap_bdt;
     iter <- iter_snap;
     loopsum_status <- loopsum_status_snap
@@ -1087,7 +1099,7 @@ class dynamic_cfg (eip : int64) = object(self)
 
   method check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
                               try_ext random_bit is_all_seen cur_ident get_t_child
-                              get_f_child add_loopsum_node = 
+                              get_f_child add_loopsum_node run_slice = 
     let trans_func (_ : bool) = V.Unknown("unused") in
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
@@ -1098,7 +1110,7 @@ class dynamic_cfg (eip : int64) = object(self)
             (let add_node ident = add_loopsum_node ident l in 
                l#check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
                  try_ext random_bit is_all_seen cur_ident get_t_child get_f_child 
-                 add_node)
+                 add_node run_slice)
         | None -> 
             ignore(try_ext trans_func try_func non_try_func (fun() -> false) both_fail_func 0xffff);
             ([], 0L)

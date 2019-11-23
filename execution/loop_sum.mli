@@ -66,6 +66,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
     bool ->
     (int -> bool) ->
     int -> (int -> int) -> (int -> int) -> (int -> unit) -> 
+    (Vine.stmt list -> unit) ->
     (int64 * Vine.exp) list * int64  
   method compute_loop_body: int64 -> int64 -> simple_graph -> unit
   method finish_loop : unit
@@ -102,6 +103,7 @@ class dynamic_cfg : int64 -> object
     bool ->
     (int -> bool) ->
     int -> (int -> int) -> (int -> int) -> (int -> loop_record -> unit) -> 
+    (Vine.stmt list -> unit) ->
     (int64 * Vine.exp) list * int64  
   method add_bd : int64 -> bool -> unit
   method add_slice : int64 -> Vine.exp -> Vine.stmt list -> unit

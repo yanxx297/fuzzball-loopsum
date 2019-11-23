@@ -24,6 +24,7 @@ let bool64 f a b =
   else 0L
 
 let is_true _ = true
+let is_false _ = false
 
 (* Like String.trim, but compatible with OCaml 3.12 *)
 let str_trim s =
@@ -718,6 +719,8 @@ struct
         | None -> ()
         | Some dcfg -> dcfg#add_g g check simplify
 
+    val temps = V.VarHash.create 100
+
     val mutable slice_var_count = 0
     val mutable slice_var_list = Hashtbl.create 100
 
@@ -846,7 +849,7 @@ struct
                       List.iter (fun stmt ->
                                    Printf.eprintf "%s\n" (V.stmt_to_string stmt)
                       ) slice;
-                      g#add_slice eip cond slice)));
+                      g#add_slice eip (self#replace_temps_exp cond) (List.rev slice))));
              g#add_bd eip b)
 
     (* A stack of useLoopsum? nodes on current path*)
@@ -875,7 +878,7 @@ struct
         | Some dcfg -> 
             dcfg#check_loopsum eip check add_pc simplify eval_int eval_cond if_expr_temp
               try_ext random_bit is_all_seen cur_ident get_t_child get_f_child 
-              self#add_loopsum_node
+              self#add_loopsum_node self#run_slice
 
     method simplify_exp typ e = e
 
@@ -883,7 +886,6 @@ struct
 
     val mutable reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
-    val temps = V.VarHash.create 100
 				
     val mutable mem_var = V.newvar "mem" (V.TMem(V.REG_32, V.Little))
     val mutable frag = ([], [])
@@ -2389,7 +2391,6 @@ struct
 	  Not_found ->
 	    V.VarHash.replace temps var value;
 
-
     method set_bit_var reg v =
       self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_1 v)
 
@@ -3083,6 +3084,12 @@ struct
       in
 	stmt_num <- -1;
 	loop sl
+
+    method private run_slice sl =
+      Hashtbl.iter (fun _ var ->
+                      V.VarHash.replace temps var (D.uninit) 
+      ) slice_var_list;
+      ignore(self#run_sl is_false sl)
 
     method run () =
       if self#started_symbolic then
