@@ -32,8 +32,6 @@ class loop_record : int64 -> int64 -> simple_graph -> object
     (Vine.exp -> bool) -> (Vine.typ -> Vine.exp -> Vine.exp) -> unit
   method get_gt : (int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp option *
                    Vine.exp option * bool * int64) list                                                                  
-  method print_gt : unit
-  method print_ivt : unit
   method get_lss: ((int64 * Vine.exp * Vine.exp * Vine.exp * Vine.exp option) list *
                    (int64 * Vine.binop_type * Vine.typ * Vine.exp * Vine.exp option *
                     Vine.exp option * bool * int64)

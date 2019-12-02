@@ -626,7 +626,7 @@ class loop_record tail head g= object(self)
                             Printf.eprintf "Add new guard at 0x%08Lx, D0 =  %s\n" eip (V.exp_to_string d))
                      | None -> ())))
 
-  method print_ivt = 
+  method private print_ivt ivt = 
     Printf.eprintf "* Inductive Variables Table [%d]\n" (List.length ivt);
     List.iteri (fun i (offset, v0, v, v', dv) ->
                   Printf.eprintf "[%d]\tmem[sp+%Lx] = %s " i offset (V.exp_to_string v0);
@@ -635,13 +635,13 @@ class loop_record tail head g= object(self)
                     | None -> Printf.eprintf "\t [dV N/A]\n"
     ) ivt
 
-  method print_gt =
+  method private print_gt gt =
     Printf.eprintf "* Guard Table [%d]\n" (List.length gt);
     List.iteri (fun i (eip, _, _, d0_e, _, _, _, eeip) ->
                   Printf.eprintf "[%d]\t0x%Lx\t%s\t0x%Lx\n" i eip (V.exp_to_string d0_e) eeip
     ) gt
 
-  method private print_bdt = 
+  method private print_bdt bdt = 
     Printf.eprintf "* Branch Decisions[%d]:\n" (Hashtbl.length bdt);
     Hashtbl.iter (fun eip b ->
                     Printf.eprintf "0x%Lx\t%B\n" eip b
@@ -691,7 +691,17 @@ class loop_record tail head g= object(self)
     in
       check_dup lss n
 
-  (* Save current (ivt, gt, geip) to a new lss if valid*)
+  method private print_lss =
+    Printf.eprintf "lss length %d\n" (List.length lss);
+    List.iteri (fun i (ivt, gt, bdt, geip) ->
+                  Printf.eprintf "lss[%d]:\n" i;
+                  self#print_ivt ivt;
+                  self#print_gt gt;
+                  self#print_bdt bdt;
+                  Printf.eprintf "Leave from 0x%Lx\n" geip
+    ) lss
+
+  (* Save current (ivt, gt, bdt, geip) to a new lss if valid*)
   (* Call this function when exiting a loop *)
   (* TODO: should also check invalid GT ?*)
   method save_lss geip =
@@ -708,8 +718,8 @@ class loop_record tail head g= object(self)
         else if (self#check_dup_lss (ivt, gt, bdt, geip)) then 
           Printf.eprintf "lss already exist, ignore\n"
         else
-          lss <- lss @ [(ivt, gt, bdt, geip)];
-        Printf.eprintf "lss length %d\n" (List.length lss)
+          lss <- lss @ [(ivt, gt, Hashtbl.copy bdt, geip)];
+        self#print_lss
 
   method private compute_precond loopsum check eval_cond simplify if_expr_temp (run_slice: V.stmt list -> unit) =
     let (_, gt, bdt, geip) = loopsum in
@@ -743,7 +753,9 @@ class loop_record tail head g= object(self)
                                   match Hashtbl.find_opt bt eip with
                                     | Some (cond, slice) -> 
                                         (run_slice slice;
-                                         res := V.BinOp(V.BITAND, !res, cond)) 
+                                         if d then 
+                                           res := V.BinOp(V.BITAND, !res, eval_cond cond)
+                                         else res := V.BinOp(V.BITAND, !res, eval_cond (V.UnOp(V.NOT, cond))))
                                     | None -> ()
                   ) bdt;
                   !res)
@@ -853,13 +865,17 @@ class loop_record tail head g= object(self)
     let choose_loopsum l =
       let feasibles = ref [] in
       let rec get_feasible id l conds = 
+        Printf.eprintf "conds[%d]:%s\n" id (V.exp_to_string (simplify V.REG_1 conds));
         (match l with
            | h::rest ->
                (let (ivt, gt, _, geip) = h in
                 let precond = self#compute_precond h check eval_cond simplify if_expr_temp run_slice in
+                  Printf.eprintf "Precond[%d]: %s\n" id (V.exp_to_string precond);
                   if check (V.BinOp(V.BITAND, precond, conds)) then
-                    feasibles := (V.BinOp(V.BITAND, precond, conds), 
-                                  id, ivt, gt, geip)::!feasibles;
+                    (Printf.eprintf "lss[%d] is feasible\n" id;
+                      feasibles := (V.BinOp(V.BITAND, precond, conds), 
+                                  id, ivt, gt, geip)::!feasibles)
+                  else Printf.eprintf "lss[%d] is infeasible\n" id;
                   get_feasible (id+1) rest (V.BinOp(V.BITAND, conds, V.UnOp(V.NOT, precond))))
            | [] -> ())
       in
@@ -912,9 +928,9 @@ class loop_record tail head g= object(self)
   (* Print loopsum status when exiting a loop*)
   method finish_loop = 
     if !opt_trace_loopsum then
-      (self#print_gt;
-       self#print_ivt;
-       self#print_bdt)
+      (self#print_gt gt;
+       self#print_ivt ivt;
+       self#print_bdt bdt)
        
 
   method reset =
