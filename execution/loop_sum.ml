@@ -804,6 +804,8 @@ class loop_record tail head g= object(self)
     let try_func (_ : bool) (_ : V.exp) = true in
     let non_try_func (_ : bool) = () in
     let both_fail_func (b : bool) = b in
+    let true_bit () = true in
+    let false_bit () = false in
     let rec get_precond l cur =
       match l with
         | h::rest -> 
@@ -815,34 +817,33 @@ class loop_record tail head g= object(self)
             ) 
         | [] -> V.Constant(V.Int(V.REG_1, 0L))
     in
-    let random_bit_gen () = 
-      let cond = 
-        (try 
-           get_precond lss (get_t_child cur_ident)
-         with
-           | Not_found -> V.Constant(V.Int(V.REG_1, 0L))) 
-      in
-        if !opt_trace_loopsum_detailed then
-          Printf.eprintf "Check all preconds: %s\n" (V.exp_to_string cond);
-        if check cond then (add_pc cond; true)
-        (* TODO: uncomment the code bellow to enable random decision*)
-        (* and call add_pc accordingly*)
-        (*
-         (Printf.eprintf "It is possible to use loopsum\n";
-         let rand = random_bit in 
-         Printf.eprintf "random: %B\n" rand;
-         rand)
-         *)
-        else (add_pc (V.UnOp(V.NOT, cond)); false)
-    in
     let use_loopsum () =
       (add_node cur_ident;
-       let res = try_ext trans_func try_func non_try_func random_bit_gen both_fail_func 0x0
+       let cond = 
+         (try 
+            get_precond lss (get_t_child cur_ident)
+          with
+            | Not_found -> V.Constant(V.Int(V.REG_1, 0L)))
        in
-         if res then
-           Printf.eprintf "Decide to use loopsum\n"
-         else Printf.eprintf "Decide not to use loopsum\n";
-         res)
+       let b = 
+         (if check cond then (add_pc cond; true)
+          (* TODO: uncomment the code bellow to enable random decision*)
+          (* and call add_pc accordingly*)
+          (*
+           (Printf.eprintf "It is possible to use loopsum\n";
+           let rand = random_bit in 
+           Printf.eprintf "random: %B\n" rand;
+           rand)
+           *)
+          else (add_pc (V.UnOp(V.NOT, cond)); false))
+       in
+         if b then 
+           (let b =  try_ext trans_func try_func non_try_func true_bit both_fail_func 0x0 in
+              Printf.eprintf "Decide to use loopsum (%B)\n" b)
+         else 
+           (let b = try_ext trans_func try_func non_try_func false_bit both_fail_func 0x0 in
+              Printf.eprintf "Decide not to use loopsum (%B)\n" b);
+         b)
     in
     let compute_iv_update loopsum = 
       let (ivt, gt, geip) = loopsum in
@@ -889,8 +890,6 @@ class loop_record tail head g= object(self)
             (id, vt, eeip)
     in
     let extend_with_loopsum l id =
-      let true_bit () = true in
-      let false_bit () = false in
       let rec extend l level =
         match l with
           | h::rest -> 
