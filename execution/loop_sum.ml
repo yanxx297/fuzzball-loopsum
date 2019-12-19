@@ -887,8 +887,9 @@ class loop_record tail head g= object(self)
           let (loopsum_cond, id, ivt, gt, geip) = (List.nth !feasibles n) in
           let (vt, eeip) = compute_iv_update (ivt, gt, geip) in
             add_pc loopsum_cond;
-            (id, vt, eeip)
+            (n, id, vt, eeip)
     in
+    (*TODO: modify this method so that try_ext code = lss id*)
     let extend_with_loopsum l id =
       let rec extend l level =
         match l with
@@ -916,9 +917,9 @@ class loop_record tail head g= object(self)
            | None -> 
                (if use_loopsum () then
                   (loopsum_status <- Some true;
-                   let (id, vt, eeip) =  choose_loopsum lss in
+                   let (n, id, vt, eeip) =  choose_loopsum lss in
                      Printf.eprintf "Choose loopsum[%d]\n" id;
-                     extend_with_loopsum lss (id+1);
+                     extend_with_loopsum lss (n+1);
                      (vt, eeip))
                 else 
                   (loopsum_status <- Some false;
@@ -980,28 +981,22 @@ class dynamic_cfg (eip : int64) = object(self)
   method mark_extra_all_seen (loop_enter_nodes: (int * loop_record) list)  
                            mark_all_seen (is_all_seen: int -> bool) get_t_child
                            get_f_child =
-    let rec mark_loopsum_all_seen num node id = 
-      (Printf.eprintf "At node %d, check loopsum %d/%d\n" node id num;
-       let mark_last_all_seen cur = 
-         (Printf.eprintf "mark_loopsum_all_seen: check node %d\n" cur;
-           let t_child = get_t_child cur in
-            if not (t_child = -1) then
-              (if id = (num - 1) then
-                 (Printf.eprintf "Node %d is the last loopsum(ls[%d]), mark it to all_seen\n" cur id;
-                  mark_all_seen (get_f_child cur))
-               else if (is_all_seen t_child) then
-                 mark_loopsum_all_seen num (get_f_child cur) (id+1)
-              )
-         )
-       in
-         mark_last_all_seen node)
+    let rec subtree_all_seen node =
+      Printf.eprintf "subtree_all_seen(%d)\n" node;
+      if not (((get_t_child node) = -1) || (is_all_seen (get_t_child node))) then -1
+      else if not ((get_f_child node) = -1) then 
+        subtree_all_seen (get_f_child node)
+      else
+        node
+         
     in
       if !opt_trace_loopsum then
         Printf.eprintf "Current path covered %d loop(s)\n" (List.length loop_enter_nodes);
       List.iter (fun (node, loop) ->
                    if is_all_seen (get_f_child node) then
-                     let num = List.length (loop#get_lss) in
-                       mark_loopsum_all_seen num (get_t_child node) 0
+                     (let n = subtree_all_seen (get_t_child node) in
+                        Printf.eprintf "Try to mark all_seen, node %d\n" n;
+                        if n >= 0 then mark_all_seen n)
       ) loop_enter_nodes
 
   method get_loop_head = 
