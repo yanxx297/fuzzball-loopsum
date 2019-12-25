@@ -1,8 +1,5 @@
 val split_cond : Vine.exp -> bool ->
-  (Vine.var ->
-     (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
-     Vine.exp option * Vine.exp option * Vine.binop_type ->
-     (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+  (Vine.var -> Vine.exp option) ->
   Vine.exp option * Vine.exp option * Vine.binop_type
 
 class simple_graph : int64 -> object
@@ -54,10 +51,7 @@ class loop_record : int64 -> int64 -> simple_graph -> object
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->
-    (Vine.var ->
-       (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
-       Vine.exp option * Vine.exp option * Vine.binop_type ->
-       (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+    (Vine.var -> Vine.exp option) ->
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
       (bool -> unit) -> (unit -> bool) -> (bool -> bool) -> int -> bool) ->
@@ -91,10 +85,7 @@ class dynamic_cfg : int64 -> object
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->
-    (Vine.var ->
-       (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
-       Vine.exp option * Vine.exp option * Vine.binop_type ->
-       (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+    (Vine.var -> Vine.exp option) ->
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
       (bool -> unit) -> (unit -> bool) -> (bool -> bool) -> int -> bool) ->

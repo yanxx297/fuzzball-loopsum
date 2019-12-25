@@ -1149,20 +1149,25 @@ struct
                  | V.REG_64 -> D.to_symbolic_64 (form_man#simplify64 e')
                  | _ -> failwith "simplify_exp: illegal typ")
 
+    method private unwrap_temp v = 
+      let if_expr_temp var fn_t else_val else_fn =
+        FormMan.if_expr_temp form_man var fn_t else_val else_fn
+      in
+        if_expr_temp v (fun (e:V.exp) -> Some e) (None: V.exp option)
+          (fun v -> 
+             Printf.eprintf "Fail to unfold %s\n" (V.var_to_string v))
+
     (* A wrapper around spfm#eval_cjmp for loop summarization*)
     (* Analyze the condition to get right and left side*)
     (* This method runs after srfm#run()*)
     method eval_cjmp exp targ1 targ2 =
-      let if_expr_temp var fn_t else_val else_fn = 
-        FormMan.if_expr_temp form_man var fn_t else_val else_fn
-      in
       let (v, e) = self#eval_cjmp_cond exp in
       let b = self#eval_cjmp_targ targ1 targ2 v e in 
         (match spfm#is_guard targ1 targ2 with
            (*targ : real targ choosen by cjmp_choose*)
            (*in_loop_targ : the jump targ that is in loop*)
            | (true, in_loop_targ) -> 
-               (match (Loop_sum.split_cond e b if_expr_temp) with
+               (match (Loop_sum.split_cond e b self#unwrap_temp) with
                   | (Some lhs, Some rhs, op) ->
                       (let ty_l = Vine_typecheck.infer_type_fast lhs in
                        let ty_r = Vine_typecheck.infer_type_fast rhs in
@@ -1324,9 +1329,6 @@ struct
             dt#count_query;
             res) 
       in
-      let if_expr_temp var fn_t else_val else_fn = 
-        FormMan.if_expr_temp form_man var fn_t else_val else_fn
-      in
       (*NOTE: why not using self#get_eip?*)
       let eip =
         (let rec get_eip l = 
@@ -1386,7 +1388,7 @@ struct
       in
         if self#is_loop_head eip && not self#before_first_branch then 
           (let (vt, eeip) = self#check_loopsum eip check add_pc self#simplify_exp 
-                              load_iv eval_cond if_expr_temp try_ext 
+                              load_iv eval_cond self#unwrap_temp try_ext 
                               dt#random_bit dt#is_all_seen dt#cur_ident
                               dt#get_t_child dt#get_f_child 
            in

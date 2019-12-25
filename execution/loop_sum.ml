@@ -19,7 +19,7 @@ open Exec_exceptions;;
 (* Split a jmp condition to (lhs, rhs, op)*)
 (* b := the in loop side of the cjmp (true/false) *)
 (* TODO: add support to more operations*)
-let split_cond e b if_expr_temp =
+let split_cond e b unwrap_temp =
   let rec split e b = 
     (let msg = "Check loop cond" in
        (match e with
@@ -57,28 +57,39 @@ let split_cond e b if_expr_temp =
                  Printf.eprintf "%s (ja/jbe):\n%s\n" msg (V.exp_to_string e);
                if b then (Some lhs, Some rhs, V.LE) else (Some rhs, Some lhs, V.LT))
           | V.Lval(V.Temp(var)) -> 
-              (if_expr_temp var (fun e' -> split e' b) 
-                 ((None: V.exp option), (None: V.exp option), V.NEQ) 
-                 (fun (v: V.var) -> 
-                    let msg = 
-                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
-                    in ignore(failwith msg)))
+              (let e_opt = unwrap_temp var in
+                 match e_opt with
+                   | Some e -> split e b
+                   | None -> (None, None, V.NEQ))
           (* Unwrap temps when they are part of the expression*)
           | V.BinOp(V.LT, V.Lval(V.Temp(var)), c)
           | V.BinOp(V.LT, c, V.Lval(V.Temp(var))) ->
-              (if_expr_temp var (fun e' -> split (V.BinOp(V.LT, c, e')) b) 
-                 ((None: V.exp option), (None: V.exp option), V.NEQ) 
-                 (fun (v: V.var) -> 
-                    let msg = 
-                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
-                    in failwith msg))
+              (let e_opt = unwrap_temp var in
+                 match e_opt with
+                   | Some e -> split (V.BinOp(V.LT, c, e)) b
+                   | None -> (None, None, V.NEQ))
           | V.BinOp(V.BITOR, V.Lval(V.Temp(var)), (V.BinOp(V.EQ, _, _) as cond)) ->
-              (if_expr_temp var (fun e' -> split (V.BinOp(V.BITOR, e', cond)) b) 
-                 ((None: V.exp option), (None: V.exp option), V.NEQ) 
-                 (fun (v: V.var) -> 
-                    let msg = 
-                      Printf.sprintf "Fail to unfold %s\n" (V.exp_to_string e)
-                    in failwith msg))
+              (let e_opt = unwrap_temp var in
+                 match e_opt with
+                   | Some e -> split (V.BinOp(V.BITOR, e, cond)) b
+                   | None -> (None, None, V.NEQ))
+          | V.BinOp(V.BITOR, 
+                    V.BinOp(V.SLT,
+                            V.BinOp(V.PLUS, V.Lval(V.Temp(var1)), (V.Constant(_) as c1)), 
+                            (V.Constant(_) as c2)), 
+                    V.Lval(V.Temp(var2))) ->
+              (let e1_opt = unwrap_temp var1 
+               and e2_opt = unwrap_temp var2 in
+                 match (e1_opt, e2_opt) with
+                   | (Some e1, Some e2) -> 
+                       (split 
+                          (V.BinOp(V.BITOR, 
+                                   V.BinOp(V.SLT,
+                                           V.BinOp(V.PLUS, e1, c1), 
+                                           c2), 
+                                   e2))
+                          b)
+                   | _ -> (None, None, V.NEQ))
           | V.Ite(e', _, _) -> (Printf.eprintf "Split ite %s to %s" (V.exp_to_string e) (V.exp_to_string e'); split e' b)
           (* Ignore this expr if it's True or False *)
           | V.Constant(V.Int(V.REG_1, b)) -> 
@@ -460,10 +471,10 @@ class loop_record tail head g= object(self)
       ) gt;
       !res
 
-  method private compute_distance_from_scratch g check eval_cond simplify if_expr_temp =
+  method private compute_distance_from_scratch g check eval_cond simplify unwrap_temp =
     let (_, op, ty, d0_e, _, _, b, _) = g in
     let e = eval_cond d0_e in
-    match (split_cond e b if_expr_temp) with
+    match (split_cond e b unwrap_temp) with
       | (Some lhs, Some rhs, _) -> 
           self#compute_distance op ty lhs rhs check simplify
       | _ -> None
@@ -482,10 +493,10 @@ class loop_record tail head g= object(self)
 
   (* Compute expected loop count from a certain guard*)
   (* D and dD should not be 0, otherwise current path never enter/exit the loop *)
-  method private compute_ec g check eval_cond simplify if_expr_temp =
+  method private compute_ec g check eval_cond simplify unwrap_temp =
     let (_, op, ty, d0_e, _, dd_opt, b, _) = g in
     let e = eval_cond d0_e in
-    match (split_cond e b if_expr_temp) with
+    match (split_cond e b unwrap_temp) with
     | (Some lhs, Some rhs, _) ->
         (let d = (match self#compute_distance op ty lhs rhs check simplify with
                     | Some d -> 
@@ -721,13 +732,13 @@ class loop_record tail head g= object(self)
           lss <- lss @ [(ivt, gt, Hashtbl.copy bdt, geip)];
         self#print_lss
 
-  method private compute_precond loopsum check eval_cond simplify if_expr_temp (run_slice: V.stmt list -> unit) =
+  method private compute_precond loopsum check eval_cond simplify unwrap_temp (run_slice: V.stmt list -> unit) =
     let (_, gt, bdt, geip) = loopsum in
     let min_g_opt = self#gt_search gt geip in 
       match min_g_opt with
         | Some min_g ->
             (let (d_cond, dd_cond, min_ec) = 
-               self#compute_ec min_g check eval_cond simplify if_expr_temp 
+               self#compute_ec min_g check eval_cond simplify unwrap_temp 
              in
              (* Construct the condition that Guard_i is the one with minimum EC*)
              let min_ec_cond geip gt =
@@ -736,7 +747,7 @@ class loop_record tail head g= object(self)
                  List.iter (fun g ->
                               let (eip, _, _, _, _, _, _, _) = g in
                                 if not (eip = geip) then
-                                  (let (_, _, ec) = self#compute_ec g check eval_cond simplify if_expr_temp in
+                                  (let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp in
                                      if !after_min then
                                        res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLE, min_ec, ec))
                                      else
@@ -797,7 +808,7 @@ class loop_record tail head g= object(self)
    condition and return the updated values and addrs of IVs.
    NOTE: the update itself implemented in sym_region_frag_machine.ml*)
   (*TODO: loopsum preconds should be add to path cond*)
-  method check_loopsum eip check (add_pc: V.exp -> unit) simplify load_iv eval_cond if_expr_temp
+  method check_loopsum eip check (add_pc: V.exp -> unit) simplify load_iv eval_cond unwrap_temp
             try_ext (random_bit:bool) (is_all_seen: int -> bool) (cur_ident: int) 
             get_t_child get_f_child (add_node: int -> unit) run_slice = 
     let trans_func (_ : bool) = V.Unknown("unused") in
@@ -810,7 +821,7 @@ class loop_record tail head g= object(self)
       match l with
         | h::rest -> 
             (if cur = -1 || not (is_all_seen (get_t_child cur)) then
-               let precond = self#compute_precond h check eval_cond simplify if_expr_temp run_slice in
+               let precond = self#compute_precond h check eval_cond simplify unwrap_temp run_slice in
                  V.BinOp(V.BITOR, precond, (get_precond rest (get_f_child cur)))
              else 
                get_precond rest (get_f_child cur)
@@ -837,11 +848,14 @@ class loop_record tail head g= object(self)
            *)
           else (add_pc (V.UnOp(V.NOT, cond)); false))
        in
+         Printf.eprintf "precond: %s\n" (V.exp_to_string cond);
          if b then 
            (let b =  try_ext trans_func try_func non_try_func true_bit both_fail_func 0x0 in
+              if not b then failwith "Inconsist try_extend result: true -> false\n";
               Printf.eprintf "Decide to use loopsum (%B)\n" b)
          else 
            (let b = try_ext trans_func try_func non_try_func false_bit both_fail_func 0x0 in
+              if b then failwith "Inconsist try_extend result: false -> true\n";
               Printf.eprintf "Decide not to use loopsum (%B)\n" b);
          b)
     in
@@ -852,7 +866,7 @@ class loop_record tail head g= object(self)
           | None -> failwith ""
           | Some g ->
               (let (_, _, _, _, _, _, _, eeip) = g in
-               let (_, _, ec) = self#compute_ec g check eval_cond simplify if_expr_temp in 
+               let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp in 
                let vt = List.map (fun (offset, v, _, _, dv_opt) ->
                                     let ty = Vine_typecheck.infer_type_fast v in
                                     let v0 = load_iv offset ty in
@@ -870,7 +884,7 @@ class loop_record tail head g= object(self)
         (match l with
            | h::rest ->
                (let (ivt, gt, _, geip) = h in
-                let precond = self#compute_precond h check eval_cond simplify if_expr_temp run_slice in
+                let precond = self#compute_precond h check eval_cond simplify unwrap_temp run_slice in
                   Printf.eprintf "Precond[%d]: %s\n" id (V.exp_to_string precond);
                   if check (V.BinOp(V.BITAND, precond, conds)) then
                     (Printf.eprintf "lss[%d] is feasible\n" id;
@@ -1107,7 +1121,7 @@ class dynamic_cfg (eip : int64) = object(self)
 
   method is_loop_head eip = Hashtbl.mem looplist eip 
 
-  method check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
+  method check_loopsum eip check add_pc simplify load_iv eval_cond unwrap_temp
                               try_ext random_bit is_all_seen cur_ident get_t_child
                               get_f_child add_loopsum_node run_slice = 
     let trans_func (_ : bool) = V.Unknown("unused") in
@@ -1118,7 +1132,7 @@ class dynamic_cfg (eip : int64) = object(self)
       match loop with
         | Some l -> 
             (let add_node ident = add_loopsum_node ident l in 
-               l#check_loopsum eip check add_pc simplify load_iv eval_cond if_expr_temp
+               l#check_loopsum eip check add_pc simplify load_iv eval_cond unwrap_temp
                  try_ext random_bit is_all_seen cur_ident get_t_child get_f_child 
                  add_node run_slice)
         | None -> 

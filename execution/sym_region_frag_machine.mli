@@ -78,10 +78,7 @@ sig
     (Vine.typ -> Vine.exp -> Vine.exp) ->
     (int64 -> Vine.typ -> Vine.exp) ->
     (Vine.exp -> Vine.exp) ->
-    (Vine.var ->
-       (Vine.exp -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
-       Vine.exp option * Vine.exp option * Vine.binop_type ->
-       (Vine.var -> unit) -> Vine.exp option * Vine.exp option * Vine.binop_type) ->
+    (Vine.var -> Vine.exp option) ->
     ((bool -> Vine.exp) ->
       (bool -> Vine.exp -> bool) ->
       (bool -> unit) -> (unit -> bool) -> (bool -> bool) -> int -> bool) ->
