@@ -433,7 +433,7 @@ class loop_record tail head g= object(self)
             (Printf.eprintf "Add new iv with offset = %Lx\n" offset;
              ivt <- ivt @ [(offset, exp, exp, exp, None)])
 
-  (*Guard table: (eip, op, ty, D0_e, D, dD, b, exit_eip)*)
+  (*Guard table: (eip, op, ty, D0_e, slice, D, dD, b, exit_eip)*)
   (*D0_e: the code exp of the jump condition's location*)
   (*D: the actual distance of current iteration, updated at each new occurence of the same loop*)
   (*EC: the expected execution count*)
@@ -445,27 +445,19 @@ class loop_record tail head g= object(self)
     else
       let res = ref true in
         List.iteri (fun i g ->
-                      let (eip, _, _, _, _, _, _, _) = g 
-                      and (eip', _, _, _, _, _, _, _) = List.nth gt' i in
+                      let (eip, _, _, _, _, _, _, _, _) = g 
+                      and (eip', _, _, _, _, _, _, _, _) = List.nth gt' i in
                         if not (eip = eip') then res := false
         ) gt;
         !res
 
   (* Given an eip, check whether it is the eip of an existing guard *)
-  method private is_known_guard geip gt = 
+  method is_known_guard geip gt = 
     let res = ref None in
-      List.iter (fun ((eip, _, _, _, _, _, _, _) as g) ->
+      List.iter (fun ((eip, _, _, _, _, _, _, _, _) as g) ->
                    if eip = geip then res := Some g
       ) gt;
       !res
-
-  method private compute_distance_from_scratch g check eval_cond simplify unwrap_temp =
-    let (_, op, ty, d0_e, _, _, b, _) = g in
-    let e = eval_cond d0_e in
-    match (split_cond e b unwrap_temp) with
-      | (Some lhs, Some rhs, _) -> 
-          self#compute_distance op ty lhs rhs check simplify
-      | _ -> None
 
   (* Formulas to compute EC (expected count)*)
   (* EC = (D+dD+1)/dD if integer overflow not happen *)
@@ -481,8 +473,9 @@ class loop_record tail head g= object(self)
 
   (* Compute expected loop count from a certain guard*)
   (* D and dD should not be 0, otherwise current path never enter/exit the loop *)
-  method private compute_ec g check eval_cond simplify unwrap_temp =
-    let (_, op, ty, d0_e, _, dd_opt, b, _) = g in
+  method private compute_ec (_, op, ty, d0_e, slice, _, dd_opt, b, _) 
+          check eval_cond simplify unwrap_temp run_slice =
+    run_slice slice;
     let e = eval_cond d0_e in
     match (split_cond e b unwrap_temp) with
     | (Some lhs, Some rhs, _) ->
@@ -597,22 +590,22 @@ class loop_record tail head g= object(self)
 
   (* Add or update a guard table entry*)
   method add_g g' check simplify =
-    let (eip, op, ty, d0_e, lhs, rhs, b, eeip) = g' in
+    let (eip, op, ty, d0_e, (slice: V.stmt list), lhs, rhs, b, eeip) = g' in
       if !opt_trace_loopsum_detailed then
         Printf.eprintf "At iter %d, check cjmp at %08Lx, op = %s\n" iter eip (V.binop_to_string op);
       (match self#is_known_guard eip gt with
          | Some g -> 
-             (let (_, _, _, _, d_opt, dd_opt, _, _) = g in
+             (let (_, _, _, _, _, d_opt, dd_opt, _, _) = g in
               let d_opt' = self#compute_distance op ty lhs rhs check simplify in
                 (match (d_opt, d_opt', dd_opt) with
                    | (Some d, Some d', Some dd) ->
                        (let dd' = V.BinOp(V.MINUS, d', d) in
                           if check (V.BinOp(V.EQ, dd, dd')) then
-                            self#replace_g (eip, op, ty, d0_e, Some d', Some dd', b, eip)
+                            self#replace_g (eip, op, ty, d0_e, slice, Some d', Some dd', b, eip)
                           else Printf.eprintf "Guard at 0x%Lx not inductive\n" eip)
                    | (Some d, Some d', None) ->
                        (let dd' = V.BinOp(V.MINUS, d', d) in
-                          self#replace_g (eip, op, ty, d0_e, Some d', Some dd', b, eip))
+                          self#replace_g (eip, op, ty, d0_e, slice, Some d', Some dd', b, eip))
                    | (_, _, None) -> Printf.eprintf "fail to compute D\n"
                    | _ -> ()))
          | None -> 
@@ -620,7 +613,7 @@ class loop_record tail head g= object(self)
                 (let d_opt = self#compute_distance op ty lhs rhs check simplify in
                    match d_opt with
                      | Some d ->
-                         (gt <- gt @ [eip, op, ty, d0_e, d_opt, None, b, eeip];
+                         (gt <- gt @ [eip, op, ty, d0_e, slice, d_opt, None, b, eeip];
                           if !opt_trace_loopsum_detailed then                     
                             Printf.eprintf "Add new guard at 0x%08Lx, D0 =  %s\n" eip (V.exp_to_string d))
                      | None -> ())))
@@ -636,7 +629,7 @@ class loop_record tail head g= object(self)
 
   method private print_gt gt =
     Printf.eprintf "* Guard Table [%d]\n" (List.length gt);
-    List.iteri (fun i (eip, _, _, d0_e, _, _, _, eeip) ->
+    List.iteri (fun i (eip, _, _, d0_e, _,  _, _, _, eeip) ->
                   Printf.eprintf "[%d]\t0x%Lx\t%s\t0x%Lx\n" i eip (V.exp_to_string d0_e) eeip
     ) gt
 
@@ -648,12 +641,13 @@ class loop_record tail head g= object(self)
 
   method get_gt = gt
 
-  method private replace_g (eip, op, ty, d0_e, d, dd, b, eeip) = 
+  method private replace_g g' = 
     let rec loop l =
       match l with
         | g::l' -> (
-            let (e, _, _, _, _, _, _, _) = g in
-              if e = eip then [(eip, op, ty, d0_e, d, dd, b, eeip)] @ l'
+            let (e, _, _, _, _, _, _, _, _) = g in
+            let (eip, _, _, _, _, _, _, _, _) = g' in
+              if e = eip then [g'] @ l'
               else[g] @ (loop l'))
         | [] -> []
     in
@@ -726,16 +720,16 @@ class loop_record tail head g= object(self)
       match min_g_opt with
         | Some min_g ->
             (let (d_cond, dd_cond, min_ec) = 
-               self#compute_ec min_g check eval_cond simplify unwrap_temp 
+               self#compute_ec min_g check eval_cond simplify unwrap_temp run_slice 
              in
              (* Construct the condition that Guard_i is the one with minimum EC*)
              let min_ec_cond geip gt =
                let res = ref (V.Constant(V.Int(V.REG_1, 1L))) in
                let after_min = ref false in
                  List.iter (fun g ->
-                              let (eip, _, _, _, _, _, _, _) = g in
+                              let (eip, _, _, _, _, _, _, _, _) = g in
                                 if not (eip = geip) then
-                                  (let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp in
+                                  (let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp run_slice in
                                      if !after_min then
                                        res := V.BinOp(V.BITAND, !res, V.BinOp(V.SLE, min_ec, ec))
                                      else
@@ -853,8 +847,8 @@ class loop_record tail head g= object(self)
         match g_opt with
           | None -> failwith ""
           | Some g ->
-              (let (_, _, _, _, _, _, _, eeip) = g in
-               let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp in 
+              (let (_, _, _, _, _, _, _, _, eeip) = g in
+               let (_, _, ec) = self#compute_ec g check eval_cond simplify unwrap_temp run_slice in 
                let vt = List.map (fun (offset, v, _, _, dv_opt) ->
                                     let ty = Vine_typecheck.infer_type_fast v in
                                     let v0 = load_iv offset ty in
@@ -1054,6 +1048,19 @@ class dynamic_cfg (eip : int64) = object(self)
       match loop with
         | None -> false
         | Some l  -> l#find_slice eip
+
+  method is_known_guard eip = 
+    let loop = self#get_current_loop in
+      match loop with
+        | None -> None
+        | Some l ->
+            (if not (l#in_loop eip) then None
+             else 
+               let res = ref None in
+                 List.iter (fun (_, gt, _, _) ->
+                              if !res = None then res := l#is_known_guard eip gt
+                 ) l#get_lss;
+                 !res)
 
   method private is_parent lp lc = 
     let head = lc#get_head in

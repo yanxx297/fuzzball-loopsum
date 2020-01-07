@@ -1189,7 +1189,7 @@ struct
                               let (is_sat, _) = self#query_with_path_cond (self#simplify_exp ty e) true in
                                 is_sat
                             in
-                              self#add_g (self#get_eip, op, ty_l, exp, lhs', rhs', b, eeip) check self#simplify_exp))
+                              spfm#add_g (self#get_eip, op, ty_l, exp, lhs', rhs', b, eeip) check self#simplify_exp))
                   | _ -> ())
            | _ -> 
                (let eip = self#get_eip in

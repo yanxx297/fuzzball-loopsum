@@ -714,7 +714,16 @@ struct
     method add_g g check simplify = 
       match current_dcfg with
         | None -> ()
-        | Some dcfg -> dcfg#add_g g check simplify
+        | Some dcfg -> 
+            (let (eip, op, ty, cond, lhs, rhs, b, eeip) = g in
+             let d0_e = self#replace_temps_exp cond in 
+               (match (dcfg#is_known_guard eip) with
+                  | Some (_, _, _, _, slice, _, _, _, _) -> 
+                      dcfg#add_g (eip, op, ty, d0_e, slice, lhs, rhs, b, eeip) check simplify
+                  | None ->
+                      (let (slice, _) = self#prog_slicing (self#get_vars cond) path_cache in
+                         self#print_slice slice;
+                         dcfg#add_g (eip, op, ty, d0_e, slice, lhs, rhs, b, eeip) check simplify)))
 
     val temps = V.VarHash.create 100
 
@@ -831,7 +840,13 @@ struct
                       self#replace_temps stmt
           )l)
         in
-          (l, vars)
+          (List.rev l, vars)
+
+    method private print_slice slice =
+      Printf.eprintf "Slicing result:\n";
+      List.iter (fun stmt ->
+                   Printf.eprintf "%s\n" (V.stmt_to_string stmt)
+      ) slice;
 
     method handle_branch eip cond b =
       match current_dcfg with
@@ -842,11 +857,8 @@ struct
                 in
                   (if (List.length slice) = 0 then () 
                    else
-                     (Printf.eprintf "Slicing result:\n";
-                      List.iter (fun stmt ->
-                                   Printf.eprintf "%s\n" (V.stmt_to_string stmt)
-                      ) slice;
-                      g#add_slice eip (self#replace_temps_exp cond) (List.rev slice))));
+                     (self#print_slice slice;
+                      g#add_slice eip (self#replace_temps_exp cond) slice)));
              g#add_bd eip b)
 
     (* A stack of useLoopsum? nodes on current path*)
@@ -3084,8 +3096,10 @@ struct
 
     method private run_slice sl =
       Hashtbl.iter (fun _ var ->
-                      V.VarHash.replace temps var (D.uninit) 
+                      V.VarHash.replace temps var (D.uninit);
+                      Printf.eprintf "run_slice: Add %s to temp list\n" (V.var_to_string var)
       ) slice_var_list;
+      Printf.eprintf "run_slice: exec slice, len = %d\n" (List.length sl);
       ignore(self#run_sl is_false sl)
 
     method run () =
