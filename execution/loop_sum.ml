@@ -451,23 +451,11 @@ class loop_record tail head g= object(self)
         ) gt;
         !res
 
-  method private gt_search gt eip = 
-    let rec check_gt l eip =
-      (match l with
-         | h::l' ->
-             (let (eip', _, _, _, _, _, _, _) = h in
-                if eip' = eip then Some h
-                else check_gt l' eip
-             )
-         | [] -> None)
-    in
-      check_gt gt eip
-
   (* Given an eip, check whether it is the eip of an existing guard *)
   method private is_known_guard geip gt = 
-    let res = ref false in
-      List.iter (fun (eip, _, _, _, _, _, _, _) ->
-                   if eip = geip then res := true
+    let res = ref None in
+      List.iter (fun ((eip, _, _, _, _, _, _, _) as g) ->
+                   if eip = geip then res := Some g
       ) gt;
       !res
 
@@ -612,7 +600,7 @@ class loop_record tail head g= object(self)
     let (eip, op, ty, d0_e, lhs, rhs, b, eeip) = g' in
       if !opt_trace_loopsum_detailed then
         Printf.eprintf "At iter %d, check cjmp at %08Lx, op = %s\n" iter eip (V.binop_to_string op);
-      (match self#gt_search gt eip with
+      (match self#is_known_guard eip gt with
          | Some g -> 
              (let (_, _, _, _, d_opt, dd_opt, _, _) = g in
               let d_opt' = self#compute_distance op ty lhs rhs check simplify in
@@ -716,7 +704,7 @@ class loop_record tail head g= object(self)
   (* Call this function when exiting a loop *)
   (* TODO: should also check invalid GT ?*)
   method save_lss geip =
-    if not (self#is_known_guard geip gt) then
+    if (self#is_known_guard geip gt) = None then
       Printf.eprintf "No lss saved since %Lx is not a guard\n" geip
     else
       let all_valid = ref true in
@@ -734,7 +722,7 @@ class loop_record tail head g= object(self)
 
   method private compute_precond loopsum check eval_cond simplify unwrap_temp (run_slice: V.stmt list -> unit) =
     let (_, gt, bdt, geip) = loopsum in
-    let min_g_opt = self#gt_search gt geip in 
+    let min_g_opt = self#is_known_guard geip gt in 
       match min_g_opt with
         | Some min_g ->
             (let (d_cond, dd_cond, min_ec) = 
@@ -861,7 +849,7 @@ class loop_record tail head g= object(self)
     in
     let compute_iv_update loopsum = 
       let (ivt, gt, geip) = loopsum in
-      let g_opt = self#gt_search gt geip in
+      let g_opt = self#is_known_guard geip gt in
         match g_opt with
           | None -> failwith ""
           | Some g ->
